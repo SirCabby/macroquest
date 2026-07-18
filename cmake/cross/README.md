@@ -181,6 +181,44 @@ stubbed). `D3DX9d_43.dll` is the debug D3DX9 redist and is absent from VS
 release deployments too (the ps1 skips missing sources silently); both are
 staged automatically if they exist.
 
+## Running under wine
+
+`MacroQuest.exe` runs under wine (tested: wine 11 staging, KDE Plasma on
+Wayland). Several loader changes make the UI usable there (all inert on
+Windows):
+
+- **Native tray icon**: wine's own XEmbed tray icon cannot receive clicks on
+  XEmbed→SNI desktops (the proxy's forwarded clicks never survive the trip
+  into wine). The build therefore ships `mq-tray-helper` (`src/loader/wine/`,
+  built natively against sd-bus), which registers a real StatusNotifierItem
+  in the panel and exports a native `com.canonical.dbusmenu` context menu —
+  rendered by the panel itself, like any native tray app. Left-click opens
+  the UI; right-click shows the **full MacroQuest menu natively**:
+  folders/sites/changelog, AutoLogin (profile groups and characters with
+  launch actions, refreshed on every open), EQBC, Advanced, and Exit. The
+  loader streams the menu model to the helper and receives clicks back over
+  a loopback socket (see `RebuildTrayMenu` in `MacroQuest.cpp` — mirror menu
+  changes there and in the ImGui menu). If the helper is missing or no
+  StatusNotifierWatcher exists, the
+  loader falls back to the wine icon, opens the main window at startup, and
+  **running `MacroQuest.exe` again raises the running instance's window**.
+  To kill MacroQuest without the menu: `pkill -x mq-tray-helper; wineserver
+  -k` (the loader respawns under a random exe name, so pkill by
+  `MacroQuest.exe` misses it).
+- The tray context menu (when opened) does not take focus on appearing under
+  wine (compositors bounce focus away, which made imgui close it instantly),
+  and its position is clamped onto a real monitor (XWayland cursor positions
+  can be stale).
+- A missing `AppCompatFlags` registry tree (wine's minimal registry) is no
+  longer reported as an error at startup.
+
+For UI debugging, set `MQ_IMGUI_DEBUG=1` and run with
+`WINEDEBUG=-all,+debugstr` to stream imgui popup/focus/viewport events to the
+terminal; tray callback arrivals are logged at debug level in `Logs/`. Note:
+clicking outside a menu on a native Wayland surface cannot dismiss it (no
+events reach wine) — use Escape, select an item, or click another MacroQuest
+window.
+
 ## Remaining
 
 1. **Run against a real client**: nothing has been tested inside EQ yet — wine

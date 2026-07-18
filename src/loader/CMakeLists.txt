@@ -157,6 +157,44 @@ target_compile_definitions(MacroQuest PRIVATE
     "_MBCS"
 )
 
+# ---------------------------------------------------------------------
+# Wine tray helper (Linux cross build only)
+# ---------------------------------------------------------------------
+# Native StatusNotifierItem helper so the wine-hosted loader gets a working
+# panel icon on SNI desktops (see src/loader/wine/mq_tray_helper.c). Built
+# with the host compiler against sd-bus and staged next to MacroQuest.exe.
+if(MQ_CROSS_LINUX)
+    find_program(MQ_HOST_CC_TRAY NAMES cc gcc clang)
+    find_program(MQ_PYTHON3 NAMES python3)
+    if(MQ_HOST_CC_TRAY AND MQ_PYTHON3)
+        if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+            set(_mq_tray_outdir "${CMAKE_BINARY_DIR}/bin/debug")
+        else()
+            set(_mq_tray_outdir "${CMAKE_BINARY_DIR}/bin/release")
+        endif()
+        set(_mq_tray_icon_h "${CMAKE_CURRENT_BINARY_DIR}/mq_tray_icon.h")
+        add_custom_command(OUTPUT "${_mq_tray_icon_h}"
+            COMMAND "${MQ_PYTHON3}" "${CMAKE_SOURCE_DIR}/cmake/cross/gen_tray_icon.py"
+                    "${CMAKE_CURRENT_SOURCE_DIR}/icon1.ico" "${_mq_tray_icon_h}" 48
+            DEPENDS "${CMAKE_SOURCE_DIR}/cmake/cross/gen_tray_icon.py"
+                    "${CMAKE_CURRENT_SOURCE_DIR}/icon1.ico"
+            COMMENT "Generating tray icon pixmap for mq-tray-helper"
+            VERBATIM)
+        set(_mq_tray_helper "${_mq_tray_outdir}/mq-tray-helper")
+        add_custom_command(OUTPUT "${_mq_tray_helper}"
+            COMMAND "${MQ_HOST_CC_TRAY}" -O2 -Wall
+                    -o "${_mq_tray_helper}"
+                    "${CMAKE_CURRENT_SOURCE_DIR}/wine/mq_tray_helper.c"
+                    -I "${CMAKE_CURRENT_BINARY_DIR}" -lsystemd
+            DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/wine/mq_tray_helper.c" "${_mq_tray_icon_h}"
+            COMMENT "Building mq-tray-helper (native SNI tray for wine)"
+            VERBATIM)
+        add_custom_target(mq-tray-helper ALL DEPENDS "${_mq_tray_helper}")
+    else()
+        message(STATUS "mq-tray-helper skipped (host cc or python3 not found)")
+    endif()
+endif()
+
 # ============================================================================
 # MANUAL CONVERSION NOTES
 # ============================================================================

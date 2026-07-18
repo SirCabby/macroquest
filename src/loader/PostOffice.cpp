@@ -192,7 +192,10 @@ void LauncherPostOffice::OnIncomingMessage(mq::postoffice::LocalConnection* conn
 		else
 			notify.dwInfoFlags = NIIF_INFO;
 
-		Shell_NotifyIconA(NIM_MODIFY, &notify);
+		// With the wine tray bridge active there is no wine tray icon to
+		// modify (and doing so could re-create the unusable XEmbed icon).
+		if (!IsWineTrayBridgeActive())
+			Shell_NotifyIconA(NIM_MODIFY, &notify);
 		break;
 	}
 

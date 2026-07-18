@@ -17,6 +17,16 @@
 #include <spdlog/spdlog.h>
 #include <cpr/cpr.h>
 
+bool IsRunningUnderWine()
+{
+	static const bool isWine = []
+		{
+			HMODULE ntdll = ::GetModuleHandleA("ntdll.dll");
+			return ntdll != nullptr && ::GetProcAddress(ntdll, "wine_get_version") != nullptr;
+		}();
+	return isWine;
+}
+
 std::string GetVersionStringLocal(const std::filesystem::path& filePath)
 {
 	std::error_code ec;

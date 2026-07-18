@@ -59,6 +59,20 @@ constexpr int WM_USER_PROCESS_ADDED         = (WM_USER + 3);
 constexpr int WM_USER_PROCESS_REMOVED       = (WM_USER + 4);
 constexpr int WM_USER_HOTKEY_ADD            = (WM_USER + 5);
 constexpr int WM_USER_HOTKEY_REMOVE         = (WM_USER + 6);
+constexpr int WM_USER_TRAY_BRIDGE           = (WM_USER + 7);
+
+// WM_USER_TRAY_BRIDGE wParam values (lParam = packed x/y screen coords)
+constexpr int TRAY_BRIDGE_ACTIVATE          = 0;
+constexpr int TRAY_BRIDGE_CONTEXT_MENU      = 1;
+constexpr int TRAY_BRIDGE_LOST              = 2;
+constexpr int TRAY_BRIDGE_MENU              = 3;
+constexpr int TRAY_BRIDGE_EXIT              = 4;
+constexpr int TRAY_BRIDGE_REFRESH           = 5;
+constexpr int TRAY_BRIDGE_MENUITEM          = 6;
+
+// True when the native wine tray helper owns the tray presence (see the
+// "Wine tray bridge" section in MacroQuest.cpp).
+bool IsWineTrayBridgeActive();
 
 
 //----------------------------------------------------------------------------
@@ -122,6 +136,7 @@ void ReportFailedInjection(InjectResult result, DWORD pid);
 
 
 // Utility
+bool IsRunningUnderWine();
 std::string GetVersionStringLocal(const std::filesystem::path& filePath);
 std::string GetVersionStringRemote(const std::string& versionURL);
 void ShowWarningBlocking(const std::string& Message);

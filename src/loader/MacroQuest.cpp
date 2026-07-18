@@ -44,7 +44,9 @@
 #include "wil/resource.h"
 
 #include <filesystem>
+#include <thread>
 #include <tuple>
+#include <winsock2.h>
 #include <shellapi.h>
 #include <fcntl.h>
 #include <shlwapi.h>
@@ -870,7 +872,14 @@ int CheckAppCompatFlags(HKEY RegBase, const std::vector<std::string>& SearchItem
 	int retVal = AppCompatFlagReturn::ERROR_GENERAL;
 	// Check the parent registry key first, if this is missing there's an issue (permissions, manual intervention)
 	// crossCheck should actually flip archs, but since we always build in 32 bit there's no reason to do it the other direction
-	if (RegOpenKeyEx(RegBase, "SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\AppCompatFlags", 0, crossCheck ? KEY_READ|KEY_WOW64_64KEY : KEY_READ, &hRegKey) == ERROR_SUCCESS)
+	const LSTATUS openStatus = RegOpenKeyEx(RegBase, "SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\AppCompatFlags", 0, crossCheck ? KEY_READ|KEY_WOW64_64KEY : KEY_READ, &hRegKey);
+	if (openStatus == ERROR_FILE_NOT_FOUND)
+	{
+		// The AppCompatFlags tree doesn't exist at all (minimal registries,
+		// e.g. wine). No key means no compatibility layers are configured.
+		retVal = AppCompatFlagReturn::ERROR_NOLAYERS;
+	}
+	else if (openStatus == ERROR_SUCCESS)
 	{
 		// Now we can check the full key
 		if (RegOpenKeyEx(RegBase, "SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\AppCompatFlags\\Layers", 0, crossCheck ? KEY_READ | KEY_WOW64_64KEY : KEY_READ, &hRegKey) != ERROR_SUCCESS)
@@ -1008,6 +1017,427 @@ void CheckAppCompat(bool alwaysDisplay = false)
 	}
 }
 
+// Ask an already-running MacroQuest instance to open its main window. Used by
+// the single-instance exits so relaunching the exe raises the UI (the only
+// reliable way to reach it under wine, where tray clicks may not arrive).
+static bool RaiseRunningInstance()
+{
+	char winClassName[64] = { 0 };
+	char winName[64] = { 0 };
+	mq::GetPrivateProfileString("MacroQuest", "MacroQuestWinClassName", "__MacroQuestTray", winClassName, lengthof(winClassName), internal_paths::MQini);
+	mq::GetPrivateProfileString("MacroQuest", "MacroQuestWinName", "MacroQuest", winName, lengthof(winName), internal_paths::MQini);
+
+	if (HWND hWndRunning = ::FindWindowA(winClassName, winName))
+	{
+		::PostMessageA(hWndRunning, WM_USER_SHELLNOTIFY_CALLBACK, WM_USER_SYSTRAY, WM_LBUTTONUP);
+		return true;
+	}
+	return false;
+}
+
+//----------------------------------------------------------------------------
+// Wine tray bridge
+//----------------------------------------------------------------------------
+// On modern Linux desktops wine's XEmbed tray icon is bridged into the panel
+// by a proxy (e.g. Plasma's xembedsniproxy) whose synthesized clicks wine's
+// X11 driver drops - the icon shows but never responds. Instead of relying on
+// it, we run a small native helper (mq-tray-helper, src/loader/wine/) that
+// registers a real StatusNotifierItem on the session bus, exactly like native
+// tray applications, and forwards the panel's Activate/ContextMenu calls to
+// us over a loopback socket. Only active when running under wine and the
+// helper is present next to the executable.
+
+static SOCKET s_trayBridgeListener = INVALID_SOCKET;
+static SOCKET s_trayBridgeConn = INVALID_SOCKET;
+static std::thread s_trayBridgeThread;
+static bool s_trayBridgeActive = false;
+
+bool IsWineTrayBridgeActive()
+{
+	return s_trayBridgeActive;
+}
+
+// The native tray menu model: a flat list of (parent, label, action) entries
+// mirroring the ImGui context menu (MaybeShowContextMenu and the registered
+// context groups). It is serialized to the helper, which serves it to the
+// panel as a com.canonical.dbusmenu; clicks come back as item ids. Rebuilt on
+// every menu open (the helper forwards AboutToShow) so dynamic content like
+// AutoLogin profiles stays current -- the same cadence as the ImGui menu,
+// which re-reads that data every frame it is visible.
+struct TrayMenuEntry
+{
+	char kind;              // 'i' = item, 's' = separator, 'h' = disabled header
+	int parent;             // 0 = top level, otherwise the id of the parent item
+	std::string label;
+	std::function<void()> action;
+};
+static std::vector<TrayMenuEntry> s_trayMenuModel;
+
+static int TrayMenuAdd(char kind, int parent, std::string label, std::function<void()> action = {})
+{
+	s_trayMenuModel.push_back(TrayMenuEntry{ kind, parent, std::move(label), std::move(action) });
+	return static_cast<int>(s_trayMenuModel.size()); // ids are 1-based indices
+}
+
+static void SendTrayMenuModel()
+{
+	const SOCKET conn = s_trayBridgeConn;
+	if (conn == INVALID_SOCKET)
+		return;
+
+	std::string out = "menu-reset\n";
+	int id = 1;
+	for (const TrayMenuEntry& entry : s_trayMenuModel)
+	{
+		std::string label = entry.label;
+		for (char& c : label)
+		{
+			if (c == '\n' || c == '\r' || c == '\t')
+				c = ' ';
+		}
+		out += fmt::format("menu-item {} {} {} {}\n", id, entry.parent, entry.kind, label);
+		++id;
+	}
+	out += "menu-commit\n";
+	::send(conn, out.c_str(), static_cast<int>(out.size()), 0);
+}
+
+static void RebuildTrayMenu()
+{
+	s_trayMenuModel.clear();
+
+	TrayMenuAdd('i', 0, "Open UI", [] { LauncherImGui::OpenMainWindow(); });
+	TrayMenuAdd('s', 0, {});
+
+	// -- MacroQuest group (mirrors ShowMacroQuestMenu) --
+	{
+		const int folders = TrayMenuAdd('i', 0, "Open Folder");
+		const auto explore = [](const std::string& path)
+			{ ShellExecuteA(nullptr, "explore", path.c_str(), nullptr, nullptr, SW_SHOW); };
+		TrayMenuAdd('i', folders, "MacroQuest Root", [explore] { explore(internal_paths::MQRoot); });
+		TrayMenuAdd('i', folders, "Config", [explore] { explore(internal_paths::Config); });
+		TrayMenuAdd('i', folders, "Macros", [explore] { explore(internal_paths::Macros); });
+		TrayMenuAdd('i', folders, "Resources", [explore] { explore(internal_paths::Resources); });
+		TrayMenuAdd('i', folders, "Logs", [explore] { explore(internal_paths::Logs); });
+		TrayMenuAdd('i', folders, "Crash Dumps", [explore] { explore(internal_paths::CrashDumps); });
+
+		const int sites = TrayMenuAdd('i', 0, "MQ Sites");
+		const auto open = [](const char* url)
+			{ ShellExecuteA(nullptr, "open", url, nullptr, nullptr, SW_SHOW); };
+		TrayMenuAdd('i', sites, "GitHub", [open] { open("https://github.com/macroquest/macroquest"); });
+		TrayMenuAdd('i', sites, "Issue Tracker", [open] { open("https://github.com/macroquest/macroquest/issues"); });
+		TrayMenuAdd('s', sites, {});
+		TrayMenuAdd('i', sites, "Website", [open] { open("https://macroquest.org"); });
+		TrayMenuAdd('i', sites, "Forums", [open] { open("https://macroquest.org/phpBB3"); });
+		TrayMenuAdd('i', sites, "Wiki", [open] { open("https://docs.macroquest.org"); });
+
+		TrayMenuAdd('i', 0, "Change Log", []
+			{
+				// Same selection logic as ShowMacroQuestMenu
+				const std::filesystem::path pathMQRootChangeLog = std::filesystem::path(internal_paths::MQRoot) / "resources" / "CHANGELOG.md";
+				const std::filesystem::path pathResourceChangeLog = std::filesystem::path(internal_paths::Resources) / "CHANGELOG.md";
+				std::filesystem::path pathChangeLog = pathResourceChangeLog;
+
+				std::error_code ec;
+				if (pathMQRootChangeLog != pathResourceChangeLog
+					&& (!exists(pathResourceChangeLog, ec)
+						|| last_write_time(pathMQRootChangeLog, ec) > last_write_time(pathResourceChangeLog, ec)))
+				{
+					pathChangeLog = pathMQRootChangeLog;
+				}
+
+				if (exists(pathChangeLog, ec))
+					ShellExecuteA(nullptr, "open", pathChangeLog.string().c_str(), nullptr, nullptr, SW_SHOW);
+				else
+					LauncherImGui::OpenMessageBox(nullptr, fmt::format("Could not find CHANGELOG.md: {}", pathChangeLog.string()), "View Changelog");
+			});
+
+		TrayMenuAdd('i', 0, "INI File", []
+			{ ShellExecuteA(nullptr, "open", internal_paths::MQini.c_str(), nullptr, internal_paths::MQRoot.c_str(), SW_SHOW); });
+	}
+	TrayMenuAdd('s', 0, {});
+
+	// -- AutoLogin group (mirrors ShowAutoLoginMenu) --
+	TrayMenuAdd('h', 0, "AutoLogin");
+	TrayMenuAdd('i', 0, "Open Config", []
+		{
+			LauncherImGui::SelectMainPanel("AutoLogin/Profiles");
+			LauncherImGui::OpenMainWindow();
+		});
+	TrayMenuAdd('i', 0, "Launch Without Login", [] { LaunchCleanSession(); });
+
+	{
+		const int profiles = TrayMenuAdd('i', 0, "Profiles");
+		bool anyGroup = false;
+		for (const std::string& group : login::db::ListProfileGroups())
+		{
+			anyGroup = true;
+			const int groupMenu = TrayMenuAdd('i', profiles, group);
+			TrayMenuAdd('i', groupMenu, "Launch All Starred", [group]
+				{
+					if (LoadAllStarredCallback)
+						LoadAllStarredCallback(group, false);
+				});
+			TrayMenuAdd('s', groupMenu, {});
+
+			bool any = false;
+			for (const ProfileRecord& profile : login::db::GetProfiles(group))
+			{
+				any = true;
+				std::string label = fmt::format("{}{}", profile.willLoad ? "* " : "", profile.characterName);
+				if (profile.characterLevel > 0 || !profile.characterClass.empty())
+					label += fmt::format(" [{} {}]", profile.characterLevel, profile.characterClass);
+				if (!profile.hotkey.empty())
+					label += fmt::format(" ({})", profile.hotkey);
+
+				TrayMenuAdd('i', groupMenu, std::move(label), [profile]
+					{
+						if (LoadCharacterCallback)
+							LoadCharacterCallback(profile, false);
+					});
+			}
+			if (!any)
+				TrayMenuAdd('h', groupMenu, "No available profiles");
+		}
+		if (!anyGroup)
+			TrayMenuAdd('h', profiles, "No profile groups");
+	}
+
+	{
+		const int characters = TrayMenuAdd('i', 0, "Characters");
+		bool anyServer = false;
+		for (const std::string& server : login::db::ListServers())
+		{
+			if (server.empty())
+				continue;
+			anyServer = true;
+
+			const int serverMenu = TrayMenuAdd('i', characters, server);
+			bool any = false;
+			for (const ProfileRecord& character : login::db::ListCharactersOnServer(server))
+			{
+				any = true;
+				std::string label = character.characterName;
+				if (character.characterLevel > 0 || !character.characterClass.empty())
+					label += fmt::format(" [{} {}]", character.characterLevel, character.characterClass);
+				if (!character.accountName.empty())
+					label += fmt::format(" ({})", character.accountName);
+
+				TrayMenuAdd('i', serverMenu, std::move(label), [character]
+					{
+						if (LoadCharacterCallback)
+							LoadCharacterCallback(character, false);
+					});
+			}
+			if (!any)
+				TrayMenuAdd('h', serverMenu, "No available characters");
+		}
+		if (!anyServer)
+			TrayMenuAdd('h', characters, "No characters");
+	}
+	TrayMenuAdd('s', 0, {});
+
+	// -- EQBC group (mirrors ShowEQBCMenu) --
+	TrayMenuAdd('h', 0, "EQBC");
+	TrayMenuAdd('i', 0, "Start EQBC Server", []
+		{
+			if (mq::IsProcessRunning("eqbcs.exe"))
+			{
+				LauncherImGui::OpenMessageBox(nullptr, "EQBCS is already running.", "EQBCS Launcher");
+			}
+			else
+			{
+				const std::string strCommandLine = fmt::format("{}\\eqbcs.exe", internal_paths::MQRoot);
+				std::error_code ec;
+				if (std::filesystem::exists(strCommandLine, ec))
+					ShellExecuteA(nullptr, "open", strCommandLine.c_str(), nullptr, internal_paths::MQRoot.c_str(), SW_SHOW);
+				else
+					LauncherImGui::OpenMessageBox(nullptr, fmt::format("EQBCS could not be found: {}", strCommandLine), "EQBCS Launcher");
+			}
+		});
+	TrayMenuAdd('s', 0, {});
+
+	// -- Advanced group (mirrors ShowAdvancedMenu) --
+	{
+		const int advanced = TrayMenuAdd('i', 0, "Advanced");
+		TrayMenuAdd('i', advanced, "Toggle Debug Console", [] { UpdateShowConsole(!gbConsoleVisible, true); });
+		TrayMenuAdd('i', advanced, "Unload All Instances", [] { SendUnloadAllCommand(); });
+		TrayMenuAdd('i', advanced, "Unload All Instances (Forced)", [] { SendForceUnloadAllCommand(); });
+		TrayMenuAdd('i', advanced, "Check App Compatibility", [] { CheckAppCompat(true); });
+		TrayMenuAdd('i', 0, "Refresh Injections", [] { RefreshInjections(); });
+	}
+	TrayMenuAdd('s', 0, {});
+
+	TrayMenuAdd('i', 0, "Exit MacroQuest", []
+		{
+			SPDLOG_INFO("Exit requested from tray menu");
+			PostQuitMessage(0);
+		});
+
+	SendTrayMenuModel();
+}
+
+// Add the wine/windows tray icon unless the bridge owns the tray presence.
+static void AddTrayIcon()
+{
+	if (!s_trayBridgeActive)
+		Shell_NotifyIcon(NIM_ADD, &NID);
+}
+
+static void TrayBridgeThread()
+{
+	const SOCKET conn = ::accept(s_trayBridgeListener, nullptr, nullptr);
+	if (conn == INVALID_SOCKET)
+		return;
+	s_trayBridgeConn = conn;
+
+	// Push the initial menu model (built on the main thread)
+	::PostMessageA(hMainWnd, WM_USER_TRAY_BRIDGE, TRAY_BRIDGE_REFRESH, 0);
+
+	std::string buffer;
+	char chunk[128];
+	for (;;)
+	{
+		const int received = ::recv(conn, chunk, sizeof(chunk), 0);
+		if (received <= 0)
+			break;
+		buffer.append(chunk, received);
+
+		size_t eol;
+		while ((eol = buffer.find('\n')) != std::string::npos)
+		{
+			const std::string line = buffer.substr(0, eol);
+			buffer.erase(0, eol + 1);
+
+			if (line == "activate")
+			{
+				::PostMessageA(hMainWnd, WM_USER_TRAY_BRIDGE, TRAY_BRIDGE_ACTIVATE, 0);
+			}
+			else if (line == "menu")
+			{
+				::PostMessageA(hMainWnd, WM_USER_TRAY_BRIDGE, TRAY_BRIDGE_MENU, 0);
+			}
+			else if (line == "exit")
+			{
+				::PostMessageA(hMainWnd, WM_USER_TRAY_BRIDGE, TRAY_BRIDGE_EXIT, 0);
+			}
+			else if (line == "abouttoshow")
+			{
+				::PostMessageA(hMainWnd, WM_USER_TRAY_BRIDGE, TRAY_BRIDGE_REFRESH, 0);
+			}
+			else if (line.rfind("menuitem ", 0) == 0)
+			{
+				const int id = atoi(line.c_str() + 9);
+				::PostMessageA(hMainWnd, WM_USER_TRAY_BRIDGE, TRAY_BRIDGE_MENUITEM, id);
+			}
+			else if (line.rfind("contextmenu ", 0) == 0)
+			{
+				int x = 0, y = 0;
+				if (sscanf_s(line.c_str(), "contextmenu %d %d", &x, &y) == 2)
+				{
+					// The helper reports desktop-global coordinates; wine puts
+					// the primary monitor at the origin with the desktop origin
+					// at SM_X/YVIRTUALSCREEN.
+					x += ::GetSystemMetrics(SM_XVIRTUALSCREEN);
+					y += ::GetSystemMetrics(SM_YVIRTUALSCREEN);
+					::PostMessageA(hMainWnd, WM_USER_TRAY_BRIDGE, TRAY_BRIDGE_CONTEXT_MENU,
+						MAKELPARAM(static_cast<short>(x), static_cast<short>(y)));
+				}
+			}
+		}
+	}
+
+	::PostMessageA(hMainWnd, WM_USER_TRAY_BRIDGE, TRAY_BRIDGE_LOST, 0);
+}
+
+static bool StartWineTrayBridge()
+{
+	wchar_t modulePath[_MAX_PATH] = { 0 };
+	::GetModuleFileNameW(nullptr, modulePath, _MAX_PATH);
+
+	std::error_code ec;
+	const std::filesystem::path helperPath = std::filesystem::path(modulePath).parent_path() / "mq-tray-helper";
+	if (!std::filesystem::exists(helperPath, ec))
+	{
+		SPDLOG_INFO("Wine tray bridge: helper not found at {}", helperPath.string());
+		return false;
+	}
+
+	// wine exports this from kernel32 to translate DOS paths to unix paths
+	using WineGetUnixFileName = char* (__cdecl*)(const wchar_t*);
+	const auto wineGetUnixFileName = reinterpret_cast<WineGetUnixFileName>(
+		::GetProcAddress(::GetModuleHandleA("kernel32.dll"), "wine_get_unix_file_name"));
+	if (wineGetUnixFileName == nullptr)
+		return false;
+
+	char* unixPathRaw = wineGetUnixFileName(helperPath.wstring().c_str());
+	if (unixPathRaw == nullptr)
+		return false;
+	const std::string helperUnixPath = unixPathRaw;
+	::HeapFree(::GetProcessHeap(), 0, unixPathRaw);
+
+	WSADATA wsaData;
+	if (::WSAStartup(MAKEWORD(2, 2), &wsaData) != 0)
+		return false;
+
+	sockaddr_in addr = {};
+	addr.sin_family = AF_INET;
+	addr.sin_addr.s_addr = ::htonl(INADDR_LOOPBACK);
+	addr.sin_port = 0;
+	int addrLen = sizeof(addr);
+
+	s_trayBridgeListener = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+	if (s_trayBridgeListener == INVALID_SOCKET
+		|| ::bind(s_trayBridgeListener, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) != 0
+		|| ::listen(s_trayBridgeListener, 1) != 0
+		|| ::getsockname(s_trayBridgeListener, reinterpret_cast<sockaddr*>(&addr), &addrLen) != 0)
+	{
+		SPDLOG_WARN("Wine tray bridge: could not create loopback listener");
+		if (s_trayBridgeListener != INVALID_SOCKET)
+		{
+			::closesocket(s_trayBridgeListener);
+			s_trayBridgeListener = INVALID_SOCKET;
+		}
+		return false;
+	}
+	const int port = ::ntohs(addr.sin_port);
+
+	// start.exe /unix executes a native binary with arguments
+	std::wstring commandLine = mq::utf8_to_wstring(
+		fmt::format("start.exe /unix \"{}\" {} \"MacroQuest\"", helperUnixPath, port));
+
+	STARTUPINFOW si = { sizeof(si) };
+	wil::unique_process_information pi;
+	if (!::CreateProcessW(L"C:\\windows\\system32\\start.exe", commandLine.data(),
+		nullptr, nullptr, FALSE, CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi))
+	{
+		SPDLOG_WARN("Wine tray bridge: failed to launch helper {}", helperUnixPath);
+		::closesocket(s_trayBridgeListener);
+		s_trayBridgeListener = INVALID_SOCKET;
+		return false;
+	}
+
+	s_trayBridgeThread = std::thread(TrayBridgeThread);
+	SPDLOG_INFO("Wine tray bridge: helper {} launched (port {})", helperUnixPath, port);
+	return true;
+}
+
+static void StopWineTrayBridge()
+{
+	if (s_trayBridgeConn != INVALID_SOCKET)
+	{
+		::closesocket(s_trayBridgeConn);
+		s_trayBridgeConn = INVALID_SOCKET;
+	}
+	if (s_trayBridgeListener != INVALID_SOCKET)
+	{
+		::closesocket(s_trayBridgeListener);
+		s_trayBridgeListener = INVALID_SOCKET;
+	}
+	if (s_trayBridgeThread.joinable())
+		s_trayBridgeThread.join();
+}
+
 LRESULT CALLBACK WndProc(HWND hWnd, UINT MSG, WPARAM wParam, LPARAM lParam)
 {
 	if (LauncherImGui::HandleWndProc(hWnd, MSG, wParam, lParam))
@@ -1019,18 +1449,65 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT MSG, WPARAM wParam, LPARAM lParam)
 		return HandleHotkey(wParam, lParam);
 
 	case WM_WINDOWPOSCHANGING:
-		Shell_NotifyIcon(NIM_ADD, &NID); //Add the systray icon.
+		AddTrayIcon(); //Add the systray icon.
 		break;
 
 	case WM_SIZE:
-		Shell_NotifyIcon(NIM_ADD, &NID); //Add the systray icon.
+		AddTrayIcon(); //Add the systray icon.
+		break;
+
+	case WM_USER_TRAY_BRIDGE:
+		switch (wParam)
+		{
+		case TRAY_BRIDGE_ACTIVATE:
+			LauncherImGui::OpenMainWindow();
+			break;
+
+		case TRAY_BRIDGE_CONTEXT_MENU:
+			LauncherImGui::OpenContextMenu(
+				static_cast<float>(GET_X_LPARAM(lParam)),
+				static_cast<float>(GET_Y_LPARAM(lParam)));
+			break;
+
+		case TRAY_BRIDGE_MENU:
+			LauncherImGui::OpenContextMenu();
+			break;
+
+		case TRAY_BRIDGE_REFRESH:
+			RebuildTrayMenu();
+			break;
+
+		case TRAY_BRIDGE_MENUITEM:
+			{
+				const int id = static_cast<int>(lParam);
+				if (id >= 1 && id <= static_cast<int>(s_trayMenuModel.size()))
+				{
+					// copy: the action may trigger a model rebuild
+					const std::function<void()> action = s_trayMenuModel[id - 1].action;
+					if (action)
+						action();
+				}
+			}
+			break;
+
+		case TRAY_BRIDGE_EXIT:
+			SPDLOG_INFO("Exit requested from tray menu");
+			PostQuitMessage(0);
+			break;
+
+		case TRAY_BRIDGE_LOST:
+			SPDLOG_WARN("Wine tray bridge lost; falling back to the wine tray icon");
+			s_trayBridgeActive = false;
+			Shell_NotifyIcon(NIM_ADD, &NID);
+			break;
+		}
 		break;
 
 	case WM_SYSCOMMAND:
 		switch (LOWORD(wParam)) // We capture the 'X' button
 		{
 		case SC_CLOSE:
-			Shell_NotifyIcon(NIM_ADD, &NID);
+			AddTrayIcon();
 			return 0;
 
 		case WM_DESTROY:
@@ -1066,6 +1543,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT MSG, WPARAM wParam, LPARAM lParam)
 	default:
 		if (MSG == NID.uCallbackMessage) // This is where we get our SysTray Icon notifications.
 		{
+			SPDLOG_DEBUG("Tray icon callback: wParam={:#x} lParam={:#x}", wParam, lParam);
+
 			switch (lParam)
 			{
 			case WM_LBUTTONUP:
@@ -1073,6 +1552,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT MSG, WPARAM wParam, LPARAM lParam)
 				break;
 
 			case WM_RBUTTONUP:
+			case WM_CONTEXTMENU:
 				LauncherImGui::OpenContextMenu();
 				break;
 			}
@@ -1080,7 +1560,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT MSG, WPARAM wParam, LPARAM lParam)
 		}
 		if (MSG == s_taskbarRestart)
 		{
-			Shell_NotifyIcon(NIM_ADD, &NID);
+			AddTrayIcon();
 		}
 	}
 
@@ -1344,7 +1824,12 @@ void InitializeWindows()
 	NID.hWnd = hMainWnd;
 	NID.uID = WM_USER_SYSTRAY;
 	NID.uFlags = NIF_TIP | NIF_ICON | NIF_MESSAGE;
-	Shell_NotifyIcon(NIM_ADD, &NID);
+
+	// Under wine, prefer a native StatusNotifierItem (the wine XEmbed icon
+	// shows but cannot receive clicks on XEmbed->SNI proxied desktops).
+	if (IsRunningUnderWine())
+		s_trayBridgeActive = StartWineTrayBridge();
+	AddTrayIcon();
 
 	s_taskbarRestart = ::RegisterWindowMessageW(L"TaskbarCreated");
 
@@ -1353,6 +1838,16 @@ void InitializeWindows()
 	LauncherImGui::AddMainPanel("Logging", ShowLoggingSettings);
 	LauncherImGui::AddMainPanel("Processes", ShowProcessInfo);
 	LauncherImGui::AddContextGroup("##MacroQuest", ShowMacroQuestMenu);
+
+	// Under wine without a working tray (no SNI bridge), the tray icon cannot
+	// receive clicks, leaving no way to reach the UI from the panel. Open the
+	// main window on startup instead; relaunching the exe also raises it (see
+	// the single-instance check).
+	if (IsRunningUnderWine() && !s_trayBridgeActive)
+	{
+		SPDLOG_INFO("Running under wine without tray bridge: opening main window (tray clicks may not be deliverable)");
+		LauncherImGui::OpenMainWindow();
+	}
 }
 
 class MQ2ProcessMonitorEvents : public ProcessMonitorEvents
@@ -1875,7 +2370,8 @@ int WINAPI CALLBACK WinMain(
 					}
 					else
 					{
-						SPDLOG_WARN("Alternate loader is already running: {}", programPathStr);
+						SPDLOG_WARN("Alternate loader is already running: {}, asking it to show its UI", programPathStr);
+						RaiseRunningInstance();
 						exit(0);
 					}
 				}
@@ -1943,11 +2439,15 @@ int WINAPI CALLBACK WinMain(
 	mq::GetPrivateProfileString("MacroQuest", "MacroQuestWinClassName", "__MacroQuestTray", gszWinClassName, lengthof(gszWinClassName), internal_paths::MQini);
 	mq::GetPrivateProfileString("MacroQuest", "MacroQuestWinName", "MacroQuest", gszWinName, lengthof(gszWinClassName), internal_paths::MQini);
 
-	// Make sure a MacroQuest instance isn't already running, if one is running, exit
+	// Make sure a MacroQuest instance isn't already running. If one is running,
+	// ask it to open its main window and exit. (Under wine desktops the tray
+	// icon may not receive clicks at all, so relaunching the exe is the
+	// reliable way to reach the UI.)
 	HWND hWndRunning = ::FindWindowA(gszWinClassName, gszWinName);
 	if (hWndRunning != nullptr)
 	{
-		SPDLOG_INFO("Closing because another window of class \"{}\" is open", gszWinClassName);
+		SPDLOG_INFO("Another window of class \"{}\" is open, asking it to show its UI and closing", gszWinClassName);
+		::PostMessageA(hWndRunning, WM_USER_SHELLNOTIFY_CALLBACK, WM_USER_SYSTRAY, WM_LBUTTONUP);
 		return 0;
 	}
 
@@ -2068,6 +2568,7 @@ int WINAPI CALLBACK WinMain(
 	UnregisterHotKey(hMainWnd, HOTKEY_EQWIN_NEXT);
 	UnregisterHotKey(hMainWnd, HOTKEY_EQWIN_BOSSKEY);
 	UnregisterGlobalHotkey(hMainWnd);
+	StopWineTrayBridge();
 	Shell_NotifyIcon(NIM_DELETE, &NID);
 
 	ShutdownAutoLogin();

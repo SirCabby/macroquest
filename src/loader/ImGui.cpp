@@ -54,6 +54,19 @@ static ImGuiWindowClass s_contextClass = []()
 		ImGuiWindowClass cl;
 		cl.ViewportFlagsOverrideSet |= ImGuiViewportFlags_TopMost;
 		cl.ViewportFlagsOverrideClear |= ImGuiViewportFlags_NoFocusOnAppearing | ImGuiViewportFlags_NoFocusOnClick;
+		if (IsRunningUnderWine())
+		{
+			// Under wine the window manager routinely bounces focus back to the
+			// previously active window right after the popup takes focus on
+			// appearing (the popup cannot win the compositor's focus-stealing
+			// rules). imgui then sees the focused viewport change away from the
+			// popup and closes it via ClosePopupsOverWindow. Opening the menu
+			// without taking focus avoids the focus transition entirely; the
+			// menu is still clickable and closes normally on selection or when
+			// another window is focused by the user.
+			cl.ViewportFlagsOverrideSet |= ImGuiViewportFlags_NoFocusOnAppearing;
+			cl.ViewportFlagsOverrideClear &= ~ImGuiViewportFlags_NoFocusOnAppearing;
+		}
 		cl.ParentViewportId = 0;
 		cl.ClassId = 1;
 		return cl;
@@ -370,6 +383,20 @@ void Run(const std::function<bool()>& mainLoop)
 	s_logFilename = (std::filesystem::path{ internal_paths::Logs } / "MacroQuest_LauncherUI.log").string();
 	Backend::Init(hMainWnd, s_iniFilename.c_str(), s_logFilename.c_str());
 
+	// Diagnostic hook: MQ_IMGUI_DEBUG=1 streams imgui popup/viewport/focus
+	// event logs to mq_imgui_debug.log next to the exe (a windows-subsystem
+	// process has no console for imgui's TTY output).
+	if (::GetEnvironmentVariableA("MQ_IMGUI_DEBUG", nullptr, 0) != 0)
+	{
+		freopen("mq_imgui_debug.log", "w", stdout);
+		setvbuf(stdout, nullptr, _IONBF, 0);
+		freopen("mq_imgui_debug_err.log", "w", stderr);
+		setvbuf(stderr, nullptr, _IONBF, 0);
+		ImGui::GetCurrentContext()->DebugLogFlags |= ImGuiDebugLogFlags_EventPopup
+			| ImGuiDebugLogFlags_EventFocus | ImGuiDebugLogFlags_EventViewport
+			| ImGuiDebugLogFlags_OutputToTTY;
+	}
+
 	auto draw_main = []()
 		{
 			if (s_focusViewport)
@@ -499,15 +526,63 @@ void OpenMainWindow()
 	);
 }
 
-void OpenContextMenu()
+// If no monitor contains the position, clamp it to the nearest monitor's work
+// area. Under wine (XWayland) tray-click cursor positions can be stale or sit
+// in a dead zone between monitors, which would open the menu where it can
+// never be seen. On Windows the cursor is always on a monitor, so this never
+// changes behavior there.
+static ImVec2 ClampPosToMonitors(ImVec2 pos)
+{
+	const ImGuiPlatformIO& platform_io = ImGui::GetPlatformIO();
+	if (platform_io.Monitors.empty())
+		return pos;
+
+	for (const ImGuiPlatformMonitor& monitor : platform_io.Monitors)
+	{
+		if (pos.x >= monitor.MainPos.x && pos.x < monitor.MainPos.x + monitor.MainSize.x
+			&& pos.y >= monitor.MainPos.y && pos.y < monitor.MainPos.y + monitor.MainSize.y)
+		{
+			return pos;
+		}
+	}
+
+	float bestDist = FLT_MAX;
+	ImVec2 bestPos = pos;
+	for (const ImGuiPlatformMonitor& monitor : platform_io.Monitors)
+	{
+		// inset so the menu opens inside the monitor rather than hugging an edge
+		const ImVec2 rectMin = monitor.WorkPos + ImVec2(8.f, 8.f);
+		const ImVec2 rectMax = monitor.WorkPos + monitor.WorkSize - ImVec2(8.f, 8.f);
+		const ImVec2 clamped(ImClamp(pos.x, rectMin.x, rectMax.x), ImClamp(pos.y, rectMin.y, rectMax.y));
+		const float dist = ImLengthSqr(clamped - pos);
+		if (dist < bestDist)
+		{
+			bestDist = dist;
+			bestPos = clamped;
+		}
+	}
+	return bestPos;
+}
+
+void OpenContextMenu(float screenX, float screenY)
 {
 	// force a mouse position update for 2 reasons:
 	// first, mouse position is completely invalid unless it has been clicked inside an imgui window
 	// second, this makes the animation cleaner by hinting at the correct rendering position on the screen
+	const ImVec2 pos = ClampPosToMonitors(ImVec2(screenX, screenY));
+
+	SPDLOG_DEBUG("OpenContextMenu: requested=({},{}) menu pos=({},{})",
+		screenX, screenY, pos.x, pos.y);
+
+	ImGui::GetIO().AddMousePosEvent(pos.x, pos.y);
+	s_contextOpen = true;
+}
+
+void OpenContextMenu()
+{
 	POINT cursor_pos = { 0, 0 };
 	GetCursorPos(&cursor_pos);
-	ImGui::GetIO().AddMousePosEvent(static_cast<float>(cursor_pos.x), static_cast<float>(cursor_pos.y));
-	s_contextOpen = true;
+	OpenContextMenu(static_cast<float>(cursor_pos.x), static_cast<float>(cursor_pos.y));
 }
 
 void OpenMessageBox(ImGuiViewport* viewport, const std::string& message, const std::string& title, const ImVec2& size)
