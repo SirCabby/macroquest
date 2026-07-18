@@ -16,6 +16,8 @@
 
 #include "routing/ServerPostOffice.h"
 
+#include <windows.h>
+
 #include <string>
 #include <optional>
 #include <vector>

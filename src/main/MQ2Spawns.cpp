@@ -432,7 +432,7 @@ class PlayerManagerBaseHook : public eqlib::PlayerManagerBase
 {
 public:
 #if IS_EXPANSION_LEVEL(EXPANSION_LEVEL_LS)
-	DETOUR_TRAMPOLINE_DEF(PlayerClient*, PrepForDestroyPlayer_Trampoline, (PlayerClient*, bool b))
+	DETOUR_TRAMPOLINE_DEF_MEMBER(PlayerManagerBaseHook, PlayerClient*, PrepForDestroyPlayer_Trampoline, (PlayerClient*, bool b))
 		PlayerClient* PrepForDestroyPlayer_Detour(PlayerClient* spawn, bool b)
 	{
 		// PrepForDestroyPlayer can be called twice through the same code path
@@ -444,7 +444,7 @@ public:
 		return PrepForDestroyPlayer_Trampoline(spawn, b);
 	}
 #else
-	DETOUR_TRAMPOLINE_DEF(PlayerClient*, PrepForDestroyPlayer_Trampoline, (PlayerClient*))
+	DETOUR_TRAMPOLINE_DEF_MEMBER(PlayerManagerBaseHook, PlayerClient*, PrepForDestroyPlayer_Trampoline, (PlayerClient*))
 	PlayerClient* PrepForDestroyPlayer_Detour(PlayerClient* spawn)
 	{
 		// PrepForDestroyPlayer can be called twice through the same code path
@@ -458,7 +458,7 @@ public:
 #endif
 
 #if !IS_EXPANSION_LEVEL(EXPANSION_LEVEL_COTF)
-	DETOUR_TRAMPOLINE_DEF(void, DestroyAllPlayers_Trampoline, ())
+	DETOUR_TRAMPOLINE_DEF_MEMBER(PlayerManagerBaseHook, void, DestroyAllPlayers_Trampoline, ())
 		void DestroyAllPlayers_Detour()
 	{
 		PlayerClient* pSpawn = FirstSpawn;
@@ -478,7 +478,7 @@ class PlayerManagerClientHook
 {
 public:
 #if IS_EXPANSION_LEVEL(EXPANSION_LEVEL_COTF)
-	DETOUR_TRAMPOLINE_DEF(PlayerClient*, CreatePlayer_Trampoline, (CUnSerializeBuffer*, void*, void*, void*, void*, void*, void*, void*, void*))
+	DETOUR_TRAMPOLINE_DEF_MEMBER(PlayerManagerClientHook, PlayerClient*, CreatePlayer_Trampoline, (CUnSerializeBuffer*, void*, void*, void*, void*, void*, void*, void*, void*))
 	PlayerClient* CreatePlayer_Detour(CUnSerializeBuffer* buf, void* a, void* b, void* c, void* d, void* e, void* f, void* g, void* h)
 	{
 		PlayerClient* spawn = CreatePlayer_Trampoline(buf, a, b, c, d, e, f, g, h);
@@ -491,7 +491,7 @@ public:
 		return spawn;
 	}
 #else
-	DETOUR_TRAMPOLINE_DEF(PlayerClient*, CreatePlayer_Trampoline, (CUnSerializeBuffer*, void*, void*, void*, void*, void*, void*, void*))
+	DETOUR_TRAMPOLINE_DEF_MEMBER(PlayerManagerClientHook, PlayerClient*, CreatePlayer_Trampoline, (CUnSerializeBuffer*, void*, void*, void*, void*, void*, void*, void*))
 		PlayerClient* CreatePlayer_Detour(CUnSerializeBuffer* buf, void* a, void* b, void* c, void* d, void* e, void* f, void* g)
 	{
 		PlayerClient* spawn = CreatePlayer_Trampoline(buf, a, b, c, d, e, f, g);
@@ -509,7 +509,7 @@ public:
 class PlayerClientHook
 {
 public:
-	DETOUR_TRAMPOLINE_DEF(int, SetNameSpriteState_Trampoline, (bool Show))
+	DETOUR_TRAMPOLINE_DEF_MEMBER(PlayerClientHook, int, SetNameSpriteState_Trampoline, (bool Show))
 	int SetNameSpriteState_Detour(bool Show)
 	{
 		if (gGameState != GAMESTATE_INGAME || !Show || !gMQCaptions)
@@ -523,7 +523,7 @@ public:
 		return reinterpret_cast<PlayerClientHook*>(pSpawn)->SetNameSpriteState_Trampoline(show);
 	}
 
-	DETOUR_TRAMPOLINE_DEF(bool, SetNameSpriteTint_Trampoline, ())
+	DETOUR_TRAMPOLINE_DEF_MEMBER(PlayerClientHook, bool, SetNameSpriteTint_Trampoline, ())
 	bool SetNameSpriteTint_Detour()
 	{
 		if (gGameState != GAMESTATE_INGAME || !gMQCaptions)
@@ -840,7 +840,7 @@ class MyEQGroundItemListManager
 public:
 	GROUNDITEM* m_pGroundItemList;
 
-	DETOUR_TRAMPOLINE_DEF(void, FreeItemList_Trampoline, ())
+	DETOUR_TRAMPOLINE_DEF_MEMBER(MyEQGroundItemListManager, void, FreeItemList_Trampoline, ())
 	void FreeItemList_Detour()
 	{
 		EQGroundItem* pItem = pItemList->Top;
@@ -855,7 +855,7 @@ public:
 		FreeItemList_Trampoline();
 	}
 
-	DETOUR_TRAMPOLINE_DEF(void, Add_Trampoline, (EQGroundItem*))
+	DETOUR_TRAMPOLINE_DEF_MEMBER(MyEQGroundItemListManager, void, Add_Trampoline, (EQGroundItem*))
 	void Add_Detour(EQGroundItem* pItem)
 	{
 		if (m_pGroundItemList)
@@ -872,7 +872,7 @@ public:
 		AddGroundItem();
 	}
 
-	DETOUR_TRAMPOLINE_DEF(void, DeleteItem_Trampoline, (EQGroundItem*))
+	DETOUR_TRAMPOLINE_DEF_MEMBER(MyEQGroundItemListManager, void, DeleteItem_Trampoline, (EQGroundItem*))
 	void DeleteItem_Detour(EQGroundItem* pItem)
 	{
 		RemoveGroundItem(pItem);

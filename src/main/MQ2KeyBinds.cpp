@@ -149,7 +149,7 @@ bool MQ2HandleKeyUp(const KeyCombo& combo)
 class KeypressHandlerHook
 {
 public:
-	DETOUR_TRAMPOLINE_DEF(void, ClearCommandStateArray_Trampoline, ())
+	DETOUR_TRAMPOLINE_DEF_MEMBER(KeypressHandlerHook, void, ClearCommandStateArray_Trampoline, ())
 	void ClearCommandStateArray_Hook()
 	{
 		for (auto& pKeybind : gKeyBinds)
@@ -163,7 +163,7 @@ public:
 		ZeroMemory(&pKeypressHandler->CommandState[0], sizeof(pKeypressHandler->CommandState));
 	}
 
-	DETOUR_TRAMPOLINE_DEF(bool, HandleKeyDown_Trampoline, (const KeyCombo&))
+	DETOUR_TRAMPOLINE_DEF_MEMBER(KeypressHandlerHook, bool, HandleKeyDown_Trampoline, (const KeyCombo&))
 	bool HandleKeyDown_Hook(const KeyCombo& combo)
 	{
 		if (!pWndMgr->HandleKeyboardMsg(combo.Data[3], true))
@@ -172,7 +172,7 @@ public:
 		return (MQ2HandleKeyDown(combo) != 0);
 	}
 
-	DETOUR_TRAMPOLINE_DEF(bool, HandleKeyUp_Trampoline, (const KeyCombo&))
+	DETOUR_TRAMPOLINE_DEF_MEMBER(KeypressHandlerHook, bool, HandleKeyUp_Trampoline, (const KeyCombo&))
 	bool HandleKeyUp_Hook(const KeyCombo& combo)
 	{
 		bool ret = false;

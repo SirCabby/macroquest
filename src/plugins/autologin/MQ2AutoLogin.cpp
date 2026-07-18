@@ -26,7 +26,7 @@
 
 #include <map>
 #include <TlHelp32.h>
-#pragma comment(lib, "Crypt32.lib")
+#pragma comment(lib, "crypt32.lib")
 
 #include <filesystem>
 
@@ -679,7 +679,7 @@ void LoginReset()
 class LoginServer_Hook
 {
 public:
-	DETOUR_TRAMPOLINE_DEF(unsigned int, JoinServer_Trampoline, (int, void*, int))
+	DETOUR_TRAMPOLINE_DEF_MEMBER(LoginServer_Hook, unsigned int, JoinServer_Trampoline, (int, void*, int))
 	unsigned int JoinServer_Detour(int serverID, void* userdata, int timeoutseconds)
 	{
 		// if someone uses the everquest patcher instead of launching with the patchme option,

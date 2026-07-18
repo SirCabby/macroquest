@@ -678,7 +678,7 @@ public:
 			[this](const std::string& address, uint16_t port)
 			{
 				NetworkAddress addr{ address, port };
-				if (!this->HasHost(addr) && !m_selfHosts.contains(address))
+				if (!this->HasHost(addr) && m_selfHosts.count(address) == 0)
 					this->AddHost(addr);
 			})
 		, m_discovererRetry([&configuration, this] { return m_discoverer.Initialize(

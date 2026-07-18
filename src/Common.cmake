@@ -6,6 +6,41 @@ include_guard()
 
 set(PATH_TO_Common_DIR ${CMAKE_CURRENT_LIST_DIR})
 
+# The Linux cross build compiles resources with llvm-rc, which cannot read
+# UTF-16 .rc files. This transcodes any UTF-16 .rc source of the target to a
+# UTF-8 copy in the build tree and compiles that instead. No-op outside the
+# cross build.
+function(mq_cross_utf8_rc TARGET_NAME)
+    if(NOT MQ_CROSS_LINUX)
+        return()
+    endif()
+    get_target_property(_mq_rc_sources ${TARGET_NAME} SOURCES)
+    foreach(_mq_src IN LISTS _mq_rc_sources)
+        if(NOT _mq_src MATCHES "\\.rc$")
+            continue()
+        endif()
+        get_filename_component(_mq_rc_abs "${_mq_src}" ABSOLUTE)
+        file(READ "${_mq_rc_abs}" _mq_rc_bom HEX LIMIT 2)
+        if(NOT _mq_rc_bom STREQUAL "fffe")
+            continue()
+        endif()
+        get_filename_component(_mq_rc_name "${_mq_rc_abs}" NAME_WE)
+        set(_mq_rc_utf8 "${CMAKE_CURRENT_BINARY_DIR}/${_mq_rc_name}.utf8.rc")
+        add_custom_command(OUTPUT "${_mq_rc_utf8}"
+            COMMAND sh -c "iconv -f UTF-16LE -t UTF-8 '${_mq_rc_abs}' | sed '1s/^\\xEF\\xBB\\xBF//' > '${_mq_rc_utf8}'"
+            DEPENDS "${_mq_rc_abs}"
+            COMMENT "Transcoding ${_mq_rc_name}.rc to UTF-8 for llvm-rc"
+            VERBATIM)
+        set_source_files_properties("${_mq_rc_abs}" PROPERTIES HEADER_FILE_ONLY ON)
+        set_source_files_properties("${_mq_rc_utf8}" PROPERTIES GENERATED TRUE)
+        target_sources(${TARGET_NAME} PRIVATE "${_mq_rc_utf8}")
+        # resource.h & friends live next to the original .rc; the transcoded
+        # copy compiles from the build tree, so resolve them via include path.
+        get_filename_component(_mq_rc_dir "${_mq_rc_abs}" DIRECTORY)
+        target_include_directories(${TARGET_NAME} PRIVATE "${_mq_rc_dir}")
+    endforeach()
+endfunction()
+
 macro(target_Common_props TARGET_NAME)
 
     # TODO: Manual conversion required for element: VcpkgMQInstallManifestDependencies
@@ -145,6 +180,10 @@ macro(target_Common_props TARGET_NAME)
         "/GS-"
         "$<$<CONFIG:Debug>:/Od>"
         "/MP"
+        # NOTE: the cross build stays on C++17. MacroQuest's vendored eqstd headers
+        # rely on MSVC's lenient constexpr rules that clang only accepts from C++23
+        # on, and fmt/spdlog enable consteval format checks under C++20 that clang
+        # also rejects — both are avoided at C++17.
         "/std:c++17"
     )
     
@@ -152,6 +191,13 @@ macro(target_Common_props TARGET_NAME)
     # Linker settings
     # ---------------------------------------------------------------------
     # Library directories - needed for the pragma lib includes used in source
+    # The cross build links with lld-link, which resolves the /DEFAULTLIB
+    # references from those pragmas (eqlib.lib, MQ2Main.lib, ...) by searching
+    # the libpath — point it at the per-config import-library directory.
+    if(MQ_CROSS_LINUX)
+        target_link_directories(${TARGET_NAME} PRIVATE
+            "${CMAKE_BINARY_DIR}/lib/${MQBinaryDirName}")
+    endif()
     target_link_directories(${TARGET_NAME} PRIVATE
         "${CMAKE_BINARY_DIR}/bin"
         "${CMAKE_BINARY_DIR}/lib"

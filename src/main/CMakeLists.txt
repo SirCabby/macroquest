@@ -86,7 +86,6 @@ set(MQ2Main_HEADERS
     "emu/EmuExtensions.h"
     "GraphicsEngine.h"
     "GraphicsResources.h"
-    "ImGuiAlphaMask.h"
     "ImGuiBackend.h"
     "ImGuiManager.h"
     "Logging.h"
@@ -355,6 +354,19 @@ add_library(MQ2Main ${LIB_TYPE}
 
 set_target_properties(MQ2Main PROPERTIES FOLDER "core")
 
+# llvm-rc can't read the UTF-16 .rc sources; resources only matter for the final
+# linked module, so skip them in the cross build.
+if(MQ_CROSS_LINUX)
+    set_source_files_properties(${MQ2Main_OTHERFILES} ${MQ2Main_ASSEMBLY} PROPERTIES HEADER_FILE_ONLY ON)
+
+    # datatypes/*Type.cpp are #included into MQ2DataTypes.cpp (a unity TU) and
+    # are marked ExcludedFromBuild for the Visual Studio generator. That is a
+    # no-op under Ninja, so exclude them from standalone compilation here too.
+    file(GLOB _mq_datatype_cpps "${CMAKE_CURRENT_SOURCE_DIR}/datatypes/*.cpp")
+    list(FILTER _mq_datatype_cpps EXCLUDE REGEX "MQ2DataTypes\\.cpp$")
+    set_source_files_properties(${_mq_datatype_cpps} PROPERTIES HEADER_FILE_ONLY ON)
+endif()
+
 # ---------------------------------------------------------------------
 # Output name customization
 # ---------------------------------------------------------------------
@@ -376,6 +388,9 @@ endif()
 # Apply props file configurations
 # ---------------------------------------------------------------------
 target_Common_props(MQ2Main)
+
+# Cross build: compile the version resource from a UTF-8 transcode.
+mq_cross_utf8_rc(MQ2Main)
 
 # ---------------------------------------------------------------------
 # Add NASM tool to ASM files
@@ -455,6 +470,9 @@ target_precompile_headers(MQ2Main PRIVATE "pch.h")
 # PRE_BUILD events
 # ---------------------------------------------------------------------
 
+# These build events shell out to powershell.exe (vswhere/crashpad setup, data
+# staging) and are Visual Studio only. Skip them for the Linux cross build.
+if(NOT MQ_CROSS_LINUX)
 add_custom_command(TARGET MQ2Main PRE_BUILD
     COMMAND powershell.exe -ExecutionPolicy Bypass -NoProfile -NonInteractive -File "${CMAKE_SOURCE_DIR}/tools/build_scripts/MQ2Main_PreBuild.ps1" ${CMAKE_GENERATOR_PLATFORM}
     VERBATIM
@@ -469,6 +487,7 @@ add_custom_command(TARGET MQ2Main POST_BUILD
     COMMENT "Performing PostBuild for ${PROJECT_NAME}..."
     VERBATIM
 )
+endif()
 
 # ============================================================================
 # MANUAL CONVERSION NOTES

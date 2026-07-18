@@ -95,7 +95,7 @@ static std::map<int, std::unique_ptr<SpawnBuffs>> gCachedBuffMap;
 class CEverQuestHook
 {
 public:
-	DETOUR_TRAMPOLINE_DEF(void, CTargetWnd__RefreshTargetBuffs_Trampoline, (CUnSerializeBuffer&))
+	DETOUR_TRAMPOLINE_DEF_MEMBER(CEverQuestHook, void, CTargetWnd__RefreshTargetBuffs_Trampoline, (CUnSerializeBuffer&))
 	void CTargetWnd__RefreshTargetBuffs_Detour(CUnSerializeBuffer& buffer)
 	{
 		gTargetbuffs = false;

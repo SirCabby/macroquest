@@ -45,7 +45,7 @@ class SpellManager_Detours
 {
 public:
 #if !IS_EXPANSION_LEVEL(EXPANSION_LEVEL_COTF)
-	DETOUR_TRAMPOLINE_DEF(bool, LoadTextSpells_Trampoline, (char*, char*, EQ_Spell*))
+	DETOUR_TRAMPOLINE_DEF_MEMBER(SpellManager_Detours, bool, LoadTextSpells_Trampoline, (char*, char*, EQ_Spell*))
 	bool LoadTextSpells_Detour(char* FileName, char* AssocFileName, EQ_Spell* SpellArray)
 	{
 		s_doingSpellChecks = true;
@@ -54,7 +54,7 @@ public:
 		return ret;
 	}
 #else
-	DETOUR_TRAMPOLINE_DEF(bool, LoadTextSpells_Trampoline, (char*, char*, EQ_Spell*, SpellAffectData*))
+	DETOUR_TRAMPOLINE_DEF_MEMBER(SpellManager_Detours, bool, LoadTextSpells_Trampoline, (char*, char*, EQ_Spell*, SpellAffectData*))
 	bool LoadTextSpells_Detour(char* FileName, char* AssocFileName, EQ_Spell* SpellArray, SpellAffectData* EffectArray)
 	{
 		s_doingSpellChecks = true;
@@ -92,7 +92,7 @@ class CPacketScrambler_Detours
 {
 public:
 	int ntoh_Detour(int nopcode);
-	DETOUR_TRAMPOLINE_DEF(int, ntoh_Trampoline, (int))
+	DETOUR_TRAMPOLINE_DEF_MEMBER(CPacketScrambler_Detours, int, ntoh_Trampoline, (int))
 };
 
 // ntoh_detour actually climbs into the stack and pulls data out from the caller's

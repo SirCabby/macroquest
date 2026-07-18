@@ -214,7 +214,7 @@ public:
 	// This hooks the UI draw function. Completely disable the UI draw if we have limiting enabled because
 	// we are going to want to tie the UI draw to the render scene, otherwise it will potentially draw out
 	// of order since the DrawWindows call happens outside of and before the RealRender_World call
-	DETOUR_TRAMPOLINE_DEF(void, DrawWindows_Trampoline, ())
+	DETOUR_TRAMPOLINE_DEF_MEMBER(CXWndManagerHook, void, DrawWindows_Trampoline, ())
 	void DrawWindows_Detour()
 	{
 		static bool lastHide = false;
@@ -280,7 +280,7 @@ class CRenderHook
 public:
 	// This hooks the main render function. We can use it to toggle rendering of the main game scene.
 	// If we disable rendering, we should still draw imgui.
-	DETOUR_TRAMPOLINE_DEF(void, RenderScene_Trampoline, ())
+	DETOUR_TRAMPOLINE_DEF_MEMBER(CRenderHook, void, RenderScene_Trampoline, ())
 	void RenderScene_Detour()
 	{
 		if (RenderScene_Hook())
@@ -306,7 +306,7 @@ public:
 	}
 
 	// Same logic as above, but this is for when the player is blind.
-	DETOUR_TRAMPOLINE_DEF(void, RenderBlind_Trampoline, ())
+	DETOUR_TRAMPOLINE_DEF_MEMBER(CRenderHook, void, RenderBlind_Trampoline, ())
 	void RenderBlind_Detour()
 	{
 		if (RenderScene_Hook())
@@ -325,7 +325,7 @@ public:
 	// RenderScene. If RenderScene didn't call BeginScene, this will, and since our simulation update
 	// is explicitly different than the draw update and the simulation update calls this at various
 	// points, we need to explicitly throttle this as well if we have enabled the frame limiter
-	DETOUR_TRAMPOLINE_DEF(void, UpdateDisplay_Trampoline, ())
+	DETOUR_TRAMPOLINE_DEF_MEMBER(CRenderHook, void, UpdateDisplay_Trampoline, ())
 	void UpdateDisplay_Detour()
 	{
 		if (UpdateDisplay_Hook())
@@ -349,7 +349,7 @@ public:
 class CParticleSystemHook
 {
 public:
-	DETOUR_TRAMPOLINE_DEF(int, CreateSpellEmitter_Trampoline, (int, unsigned long, int, float, float, CVector3 const&, CActor*, CBoneInterface*, CParticlePointInterface*, void**, float, bool, bool, int))
+	DETOUR_TRAMPOLINE_DEF_MEMBER(CParticleSystemHook, int, CreateSpellEmitter_Trampoline, (int, unsigned long, int, float, float, CVector3 const&, CActor*, CBoneInterface*, CParticlePointInterface*, void**, float, bool, bool, int))
 	int CreateSpellEmitter_Detour(
 		int index,
 		unsigned long a,
@@ -392,7 +392,7 @@ class CDisplayHook
 public:
 	// This hooks the main world update function. We will never skip running it, but we change
 	// when it is called based on our frame limiting scheme.
-	DETOUR_TRAMPOLINE_DEF(void, RealRender_World_Trampoline, ())
+	DETOUR_TRAMPOLINE_DEF_MEMBER(CDisplayHook, void, RealRender_World_Trampoline, ())
 	void RealRender_World_Detour()
 	{
 		// This will only be true if we the frame limiter is disabled, but there are side effects to do the simulation step later

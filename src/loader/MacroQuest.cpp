@@ -52,8 +52,8 @@
 #include <aclapi.h>
 #include <sddl.h>
 
-#pragma comment(lib, "Psapi.lib")
-#pragma comment(lib, "Crypt32.lib")
+#pragma comment(lib, "psapi.lib")
+#pragma comment(lib, "crypt32.lib")
 #pragma comment(lib, "dbghelp.lib")
 #pragma comment(lib, "wbemuuid.lib")
 #pragma comment(lib, "comctl32.lib")

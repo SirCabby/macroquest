@@ -796,7 +796,7 @@ void DoLoginPulse()
 class CEverQuestHook
 {
 public:
-	DETOUR_TRAMPOLINE_DEF(void, SetGameState_Trampoline, (DWORD GameState))
+	DETOUR_TRAMPOLINE_DEF_MEMBER(CEverQuestHook, void, SetGameState_Trampoline, (DWORD GameState))
 	void SetGameState_Detour(DWORD GameState)
 	{
 		SetGameState_Trampoline(GameState);
@@ -804,7 +804,7 @@ public:
 		Benchmark(bmPluginsSetGameState, PluginsSetGameState(GameState));
 	}
 
-	DETOUR_TRAMPOLINE_DEF(void, CMerchantWnd__PurchasePageHandler__UpdateList_Trampoline, ())
+	DETOUR_TRAMPOLINE_DEF_MEMBER(CEverQuestHook, void, CMerchantWnd__PurchasePageHandler__UpdateList_Trampoline, ())
 	void CMerchantWnd__PurchasePageHandler__UpdateList_Detour()
 	{
 		gItemsReceived = false;

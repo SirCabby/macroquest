@@ -89,6 +89,12 @@ endif()
 
 vcpkg_cmake_config_fixup(CONFIG_PATH lib/cmake/CURL-84)
 
+# find_package(curl-84) needs a case-matching config file name; Windows' FS
+# resolves "curl-84Config.cmake" -> "CURL-84Config.cmake" case-insensitively,
+# but a case-sensitive filesystem (Linux cross build) does not.
+file(WRITE "${CURRENT_PACKAGES_DIR}/share/${PORT}/curl-84-config.cmake"
+    "include(\"\${CMAKE_CURRENT_LIST_DIR}/CURL-84Config.cmake\")\n")
+
 vcpkg_fixup_pkgconfig()
 set(namespec "curl")
 if(VCPKG_TARGET_IS_WINDOWS AND NOT VCPKG_TARGET_IS_MINGW)
@@ -144,7 +150,10 @@ file(WRITE "${inet_ntop_copyright}" "${inet_ntop_c}")
 
 file(RENAME "${CURRENT_PACKAGES_DIR}/include/curl" "${CURRENT_PACKAGES_DIR}/include/curl-84")
 file(RENAME "${CURRENT_PACKAGES_DIR}/lib/pkgconfig/libcurl.pc" "${CURRENT_PACKAGES_DIR}/lib/pkgconfig/libcurl-84.pc")
-file(RENAME "${CURRENT_PACKAGES_DIR}/debug/lib/pkgconfig/libcurl.pc" "${CURRENT_PACKAGES_DIR}/debug/lib/pkgconfig/libcurl-84.pc")
+# The debug tree does not exist in release-only builds (e.g. VCPKG_BUILD_TYPE release)
+if(EXISTS "${CURRENT_PACKAGES_DIR}/debug/lib/pkgconfig/libcurl.pc")
+    file(RENAME "${CURRENT_PACKAGES_DIR}/debug/lib/pkgconfig/libcurl.pc" "${CURRENT_PACKAGES_DIR}/debug/lib/pkgconfig/libcurl-84.pc")
+endif()
 
 vcpkg_install_copyright(
     FILE_LIST

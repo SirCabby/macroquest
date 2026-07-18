@@ -97,7 +97,7 @@ public:
 	// this is only valid during a d3d9 hook detour
 	IDirect3DDevice9* GetThisDevice() { return reinterpret_cast<IDirect3DDevice9*>(this); }
 
-	DETOUR_TRAMPOLINE_DEF(HRESULT WINAPI, Reset_Trampoline, (D3DPRESENT_PARAMETERS*))
+	DETOUR_TRAMPOLINE_DEF_MEMBER(RendererDX9Hooks, HRESULT WINAPI, Reset_Trampoline, (D3DPRESENT_PARAMETERS*))
 	HRESULT WINAPI Reset_Detour(D3DPRESENT_PARAMETERS* pPresentationParameters)
 	{
 		if (gpD3D9Device != GetThisDevice())
@@ -112,7 +112,7 @@ public:
 		return Reset_Trampoline(pPresentationParameters);
 	}
 
-	DETOUR_TRAMPOLINE_DEF(HRESULT WINAPI, BeginScene_Trampoline, ())
+	DETOUR_TRAMPOLINE_DEF_MEMBER(RendererDX9Hooks, HRESULT WINAPI, BeginScene_Trampoline, ())
 	HRESULT WINAPI BeginScene_Detour()
 	{
 		// Whenever a BeginScene occurs, we know that this is the device we want to use.
@@ -122,7 +122,7 @@ public:
 		return BeginScene_Trampoline();
 	}
 
-	DETOUR_TRAMPOLINE_DEF(HRESULT WINAPI, EndScene_Trampoline, ())
+	DETOUR_TRAMPOLINE_DEF_MEMBER(RendererDX9Hooks, HRESULT WINAPI, EndScene_Trampoline, ())
 	HRESULT WINAPI EndScene_Detour()
 	{
 		IDirect3DDevice9* thisDevice = GetThisDevice();

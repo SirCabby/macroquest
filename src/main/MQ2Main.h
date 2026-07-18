@@ -17,7 +17,7 @@
 #include "pch.h"
 #include "MQ2MainBase.h"
 
-#include "blech/Blech.h"
+#include "Blech/Blech.h"
 #include "eqlib/EQLib.h"
 using namespace eqlib;
 

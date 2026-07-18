@@ -30,15 +30,22 @@ cmake_minimum_required(VERSION 3.30)
 # ============================================================================
 # Requirements checks
 # ============================================================================
+# MQ_CROSS_LINUX enables an experimental Linux -> Windows(x86) cross build using
+# clang-cl + lld-link against an xwin-provided Windows SDK, driven by Ninja.
+# It is fully opt-in and leaves the normal Visual Studio / MSVC path untouched.
+# See cmake/cross/ for the toolchain, triplet and README.
 # Only Visual Studio generators make sense for MQ due to architecture restrictions
-if(NOT CMAKE_GENERATOR MATCHES "Visual Studio")
+if(NOT MQ_CROSS_LINUX AND NOT CMAKE_GENERATOR MATCHES "Visual Studio")
     message(FATAL_ERROR "Only Visual Studio generators are viable for MacroQuest compilation")
 endif()
 
 # Validate architecture is specified for Visual Studio generator
 # vcpkg triplet setup MUST be before project() call, do it here because it's convenient
 # Determine architecture from CMAKE_GENERATOR_PLATFORM (set by -A flag)
-if(CMAKE_GENERATOR_PLATFORM STREQUAL "x64")
+if(MQ_CROSS_LINUX)
+    set(VCPKG_TARGET_TRIPLET "x86-windows-static" CACHE STRING "")
+    set(VCPKG_ARCH "x86" CACHE STRING "")
+elseif(CMAKE_GENERATOR_PLATFORM STREQUAL "x64")
     set(VCPKG_TARGET_TRIPLET "x64-windows-static" CACHE STRING "")
     set(VCPKG_ARCH "x64" CACHE STRING "")
 elseif(CMAKE_GENERATOR_PLATFORM STREQUAL "Win32")
@@ -72,6 +79,11 @@ option(MQ_BUILD_TESTS "Build tests" OFF)
 option(MQ_ADD_MQ2MAIN_DEPENDENCY "Add MQ2Main as dependency to custom plugins if not present" OFF)
 option(MQ_FORCE_VCXPROJ_CONVERSION "Force reconversion of vcxproj files even if CMakeLists.txt exists" OFF)
 option(MQ_FORCE_OVERLAY_REBUILD "Force rebuild of vcpkg.json files in projects that have legacy vcpkg manifests" OFF)
+option(MQ_CROSS_LINUX "Experimental: cross-build the Win32/emu target on Linux with clang-cl (see cmake/cross/)" OFF)
+
+# Optional subset of subdirectories to build. Useful for bringing up the Linux
+# cross build incrementally (e.g. "src/eqlib"). Empty = build the normal set.
+set(MQ_CROSS_SUBDIRS "" CACHE STRING "Semicolon list of subdirs to build instead of the full set (cross bring-up)")
 
 # Custom plugin configuration options
 set(MQ_CUSTOM_PLUGINS_FILE "" CACHE FILEPATH "Path to a CMake file that adds custom plugins (overrides auto-detection)")
@@ -189,8 +201,10 @@ endforeach()
 # Remove any duplicates
 list(REMOVE_DUPLICATES MQ_VCPKG_PORTS)
 
-if(NOT MQ_REGENERATE_SOLUTION)
-    # if we are just regenerating the solution, don't build the manifests
+if(NOT MQ_REGENERATE_SOLUTION AND NOT MQ_CROSS_LINUX)
+    # if we are just regenerating the solution, don't build the manifests.
+    # The Linux cross build consumes dependencies from a classic (non-manifest)
+    # vcpkg tree, so it skips overlay-manifest generation entirely.
     message(STATUS "Generating VCPKG manifest (FORCE OVERLAY REBUILD: ${MQ_FORCE_OVERLAY_REBUILD})")
     include(cmake/vcpkg_manifest.cmake)
 
@@ -217,8 +231,8 @@ set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 
 set(CMAKE_CONFIGURATION_TYPES "Debug;Release" CACHE STRING "Available build configurations" FORCE)
 
-# Toolset selection
-if(NOT CMAKE_GENERATOR_TOOLSET)
+# Toolset selection (Visual Studio generators only)
+if(NOT MQ_CROSS_LINUX AND NOT CMAKE_GENERATOR_TOOLSET)
     set(CMAKE_GENERATOR_TOOLSET "v143" CACHE STRING "Choose MSVC toolset." FORCE)
 endif()
 
@@ -248,10 +262,44 @@ if(MQ_REGENERATE_SOLUTION)
     message(STATUS "Regenerating macroquest solution file")
     include(cmake/vcxproj_sln.cmake)
 else()
+    # With Ninja there is no -A flag, so CMAKE_GENERATOR_PLATFORM is empty. Pin it
+    # as a normal variable now (deferred to here, after the top-level find_package
+    # calls have already resolved and cached Threads/etc. via try_compile — a live
+    # CMAKE_GENERATOR_PLATFORM leaks into those sub-builds and Ninja rejects it) so
+    # the many downstream $<STREQUAL:${CMAKE_GENERATOR_PLATFORM},Win32> checks work.
+    if(MQ_CROSS_LINUX)
+        set(CMAKE_GENERATOR_PLATFORM "Win32")
+        # eqlib stubs out its MSVC inline-asm trampolines under __clang__ (for
+        # clang tooling). We compile them for real with clang-cl, so opt back in.
+        add_compile_definitions(EQLIB_CROSS_COMPILE)
+        # crashpad is a GN/mini_chromium build that is impractical to
+        # cross-compile; point find_package(crashpad) at a no-op header stub so
+        # MQ2Main still builds (crash reporting is disabled).
+        set(crashpad_DIR "${CMAKE_SOURCE_DIR}/cmake/cross/stubs/crashpad" CACHE PATH "" FORCE)
+    endif()
+
+    # Cross bring-up: allow building an explicit subset of subdirectories.
+    if(MQ_CROSS_SUBDIRS)
+        set(MQ_ALL_SUBDIRS ${MQ_CROSS_SUBDIRS})
+        message(STATUS "MQ_CROSS_SUBDIRS override active: ${MQ_ALL_SUBDIRS}")
+    endif()
     list(REMOVE_DUPLICATES MQ_ALL_SUBDIRS)
     foreach(SUBDIR ${MQ_ALL_SUBDIRS})
         add_subdirectory(${SUBDIR})
     endforeach()
+
+    # The VS build stages data files (resources, macros, default config,
+    # plugin lua scripts, ...) through powershell post-build events
+    # (MQ2Main_PostBuild.ps1, CopyMQPluginFiles). The cross build replicates
+    # that with a CMake script so bin/<config> is a deployable layout.
+    if(MQ_CROSS_LINUX)
+        add_custom_target(mq_stage_data ALL
+            COMMAND "${CMAKE_COMMAND}"
+                "-DMQ_ROOT=${CMAKE_SOURCE_DIR}"
+                "-DMQ_STAGE_DIR=${CMAKE_BINARY_DIR}/bin/$<IF:$<CONFIG:Debug>,debug,release>"
+                -P "${CMAKE_SOURCE_DIR}/cmake/cross/stage_data.cmake"
+            COMMENT "Staging MacroQuest data files")
+    endif()
 endif()
 
 # Print configuration summary

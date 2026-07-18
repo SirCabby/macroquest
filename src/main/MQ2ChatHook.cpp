@@ -29,10 +29,10 @@ class CChatHook
 {
 public:
 #if IS_EXPANSION_LEVEL(EXPANSION_LEVEL_COTF)
-	DETOUR_TRAMPOLINE_DEF(void, Trampoline, (const char* szMsg, DWORD dwColor, bool, bool, bool, bool))
+	DETOUR_TRAMPOLINE_DEF_MEMBER(CChatHook, void, Trampoline, (const char* szMsg, DWORD dwColor, bool, bool, bool, bool))
 	void Detour(const char* szMsg, DWORD dwColor, bool EqLog, bool dopercentsubst, bool makeStmlSafe, bool checkChatFilter)
 #else
-	DETOUR_TRAMPOLINE_DEF(void, Trampoline, (const char* szMsg, DWORD dwColor, bool, bool))
+	DETOUR_TRAMPOLINE_DEF_MEMBER(CChatHook, void, Trampoline, (const char* szMsg, DWORD dwColor, bool, bool))
 	void Detour(const char* szMsg, DWORD dwColor, bool EqLog, bool dopercentsubst)
 #endif
 	{
@@ -105,7 +105,7 @@ public:
 	}
 
 	// ChatManagerClient::DisplayTellText
-	DETOUR_TRAMPOLINE_DEF(void, TellWnd_Trampoline, (const char* message, const char* from, const char* windowtitle, const char* text, int color, bool bLogOk))
+	DETOUR_TRAMPOLINE_DEF_MEMBER(CChatHook, void, TellWnd_Trampoline, (const char* message, const char* from, const char* windowtitle, const char* text, int color, bool bLogOk))
 	void TellWnd_Detour(const char* message, const char* from, const char* windowtitle, const char* text, int color, bool bLogOk)
 	{
 		gbInChat = true;
@@ -151,7 +151,7 @@ public:
 	}
 
 	// CEverQuest::UniversalChatProxyNotificationFlush
-	DETOUR_TRAMPOLINE_DEF(void, UPCNotificationFlush_Trampoline, ())
+	DETOUR_TRAMPOLINE_DEF_MEMBER(CChatHook, void, UPCNotificationFlush_Trampoline, ())
 	void UPCNotificationFlush_Detour()
 	{
 		CEverQuest* eq = (CEverQuest*)this;

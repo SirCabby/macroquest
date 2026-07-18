@@ -231,7 +231,7 @@ void OnLuaThreadDestroyed(LuaThread* destroyedThread)
 
 void OnLuaTLORemoved(MQTopLevelObject* tlo, int pidOwner)
 {
-	auto iter = std::ranges::find_if(s_globalState->runningScripts,
+	auto iter = std::find_if(std::begin(s_globalState->runningScripts), std::end(s_globalState->runningScripts),
 		[pidOwner](const auto& thread) { return thread.pid == pidOwner; });
 
 	for (RunningScript& script : s_globalState->runningScripts)
@@ -666,7 +666,7 @@ static void LuaStopCommand(std::optional<std::string> scriptName = std::nullopt)
 		if (pid > 0UL)
 		{
 			// Find by PID
-			script_iter = std::ranges::find_if(s_globalState->runningScripts,
+			script_iter = std::find_if(std::begin(s_globalState->runningScripts), std::end(s_globalState->runningScripts),
 				[&pid](const RunningScript& script)
 			{
 				return !script.dead && script.pid == pid;
@@ -675,7 +675,7 @@ static void LuaStopCommand(std::optional<std::string> scriptName = std::nullopt)
 		else
 		{
 			// Find By Canonical Name
-			script_iter = std::ranges::find_if(s_globalState->runningScripts,
+			script_iter = std::find_if(std::begin(s_globalState->runningScripts), std::end(s_globalState->runningScripts),
 				[&scriptName](const RunningScript& script)
 			{
 				return !script.dead && ci_equals(script.name, *scriptName);
@@ -688,7 +688,7 @@ static void LuaStopCommand(std::optional<std::string> scriptName = std::nullopt)
 
 				if (info.found)
 				{
-					script_iter = std::ranges::find_if(s_globalState->runningScripts,
+					script_iter = std::find_if(std::begin(s_globalState->runningScripts), std::end(s_globalState->runningScripts),
 						[&info](const RunningScript& script)
 					{
 						return !script.dead && ci_equals(script.name, info.canonicalName);
@@ -698,7 +698,7 @@ static void LuaStopCommand(std::optional<std::string> scriptName = std::nullopt)
 				{
 					std::string canonicalName = LuaEnvironmentSettings::GetCanonicalScriptName(*scriptName, s_environment.luaDir);
 
-					script_iter = std::ranges::find_if(s_globalState->runningScripts,
+					script_iter = std::find_if(std::begin(s_globalState->runningScripts), std::end(s_globalState->runningScripts),
 						[&canonicalName](const RunningScript& script)
 					{
 						return !script.dead && ci_equals(script.name, canonicalName);
@@ -753,7 +753,7 @@ static void LuaPauseCommand(std::optional<std::string> scriptName, bool on, bool
 
 		if (pid > 0UL)
 		{
-			script_iter = std::ranges::find_if(s_globalState->runningScripts,
+			script_iter = std::find_if(std::begin(s_globalState->runningScripts), std::end(s_globalState->runningScripts),
 				[&pid](const RunningScript& script)
 			{
 				return !script.dead && script.pid == pid;
@@ -761,7 +761,7 @@ static void LuaPauseCommand(std::optional<std::string> scriptName, bool on, bool
 		}
 		else
 		{
-			script_iter = std::ranges::find_if(s_globalState->runningScripts,
+			script_iter = std::find_if(std::begin(s_globalState->runningScripts), std::end(s_globalState->runningScripts),
 				[&scriptName](const RunningScript& script)
 			{
 				return !script.dead && ci_equals(script.name, *scriptName);
@@ -824,7 +824,7 @@ static void LuaPauseCommand(std::optional<std::string> scriptName, bool on, bool
 		// try to Get the user's intention here. If all scripts are running/paused, batch toggle state.
 		// If there are any running, assume we want to pause those only.
 
-		auto findIter = std::ranges::find_if(std::as_const(s_globalState->runningScripts),
+		auto findIter = std::find_if(std::cbegin(s_globalState->runningScripts), std::cend(s_globalState->runningScripts),
 			[](const RunningScript& script)
 		{
 			if (script.dead)

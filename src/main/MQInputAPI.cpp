@@ -69,7 +69,7 @@ static ItemClickStatus s_groundItemClickStatus = ItemClickStatus::None;
 class CDisplay_Detour
 {
 public:
-	DETOUR_TRAMPOLINE_DEF(CActorInterface*, GetClickedActor_Tramp, (int, int, bool, CVector3&, CVector3&))
+	DETOUR_TRAMPOLINE_DEF_MEMBER(CDisplay_Detour, CActorInterface*, GetClickedActor_Tramp, (int, int, bool, CVector3&, CVector3&))
 		CActorInterface* GetClickedActor_Detour(int X, int Y, bool bFlag, CVector3& Vector1, CVector3& Vector2)
 	{
 		if (s_groundItemClickStatus != ItemClickStatus::None)

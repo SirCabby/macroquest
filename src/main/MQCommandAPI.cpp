@@ -53,7 +53,7 @@ MQCommandAPI* pCommandAPI = nullptr;
 class CEverQuest_CommandHook
 {
 public:
-	DETOUR_TRAMPOLINE_DEF(void, InterpretCmd_Trampoline, (SPAWNINFO* pChar, const char* szFullLine))
+	DETOUR_TRAMPOLINE_DEF_MEMBER(CEverQuest_CommandHook, void, InterpretCmd_Trampoline, (SPAWNINFO* pChar, const char* szFullLine))
 	void InterpretCmd_Detour(SPAWNINFO* pChar, const char* szFullLine)
 	{
 		DebugSpew("CCommandHook::Detour(%s)", szFullLine);

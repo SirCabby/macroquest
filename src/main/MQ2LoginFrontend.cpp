@@ -47,7 +47,7 @@ public:
 	// This is called continually during the login mainloop so we can use it as our pulse when the MAIN
 	// gameloop pulse is not active but login is.
 	// that will allow plugins to work and execute commands all the way back pre login and server select etc.
-	DETOUR_TRAMPOLINE_DEF(void, GiveTime_Trampoline, ())
+	DETOUR_TRAMPOLINE_DEF_MEMBER(LoginController_Hook, void, GiveTime_Trampoline, ())
 	void GiveTime_Detour()
 	{
 		if (!s_inFrontend)
@@ -106,7 +106,7 @@ LRESULT WINAPI EQMain__WndProc_Detour(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 class CXWndManager_Hook
 {
 public:
-	DETOUR_TRAMPOLINE_DEF(HCURSOR, GetCursorToDisplay_Trampoline, ())
+	DETOUR_TRAMPOLINE_DEF_MEMBER(CXWndManager_Hook, HCURSOR, GetCursorToDisplay_Trampoline, ())
 	HCURSOR GetCursorToDisplay_Detour()
 	{
 		if (ImGui::GetCurrentContext() != nullptr && ImGui::GetIO().WantCaptureMouse)

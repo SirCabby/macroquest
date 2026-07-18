@@ -106,7 +106,7 @@ ImGuiWindowBase::ImGuiWindowBase(std::string_view windowId, std::string_view win
 
 ImGuiWindowBase::~ImGuiWindowBase()
 {
-	std::erase(s_imguiBaseWindows, this);
+	s_imguiBaseWindows.erase(std::remove(s_imguiBaseWindows.begin(), s_imguiBaseWindows.end(), this), s_imguiBaseWindows.end());
 }
 
 void ImGuiWindowBase::UpdateAll()

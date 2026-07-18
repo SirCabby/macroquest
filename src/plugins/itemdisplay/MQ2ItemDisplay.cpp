@@ -1601,7 +1601,7 @@ public:
 
 	//============================================================================
 
-	DETOUR_TRAMPOLINE_DEF(void, UpdateStrings_Trampoline, ())
+	DETOUR_TRAMPOLINE_DEF_MEMBER(CItemDisplayWndOverride, void, UpdateStrings_Trampoline, ())
 	void UpdateStrings_Detour()
 	{
 		if (s_inSetItem)
@@ -1639,7 +1639,7 @@ public:
 		}
 	}
 
-	DETOUR_TRAMPOLINE_DEF(void, SetItem_Trampoline, (const ItemPtr& pItem, int flags))
+	DETOUR_TRAMPOLINE_DEF_MEMBER(CItemDisplayWndOverride, void, SetItem_Trampoline, (const ItemPtr& pItem, int flags))
 	void SetItem_Detour(const ItemPtr& pItem, int flags)
 	{
 		ItemDisplayExtraInfo& extraInfo = s_itemDisplayExtraInfo[this];
@@ -1679,7 +1679,7 @@ private:
 class SpellDisplayHook : public CSpellDisplayWnd
 {
 public:
-	DETOUR_TRAMPOLINE_DEF(void, UpdateStrings_Trampoline, ())
+	DETOUR_TRAMPOLINE_DEF_MEMBER(SpellDisplayHook, void, UpdateStrings_Trampoline, ())
 	void UpdateStrings_Detour()
 	{
 		UpdateStrings_Trampoline();

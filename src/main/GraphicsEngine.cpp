@@ -55,7 +55,7 @@ bool OverlayWndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 class CParticleSystemHook
 {
 public:
-	DETOUR_TRAMPOLINE_DEF(void, Render_Trampoline, ())
+	DETOUR_TRAMPOLINE_DEF_MEMBER(CParticleSystemHook, void, Render_Trampoline, ())
 	void Render_Detour()
 	{
 		if (s_gfxEngine)
@@ -72,7 +72,7 @@ public:
 class CRenderHook
 {
 public:
-	DETOUR_TRAMPOLINE_DEF(bool, ResetDevice_Trampoline, (bool))
+	DETOUR_TRAMPOLINE_DEF_MEMBER(CRenderHook, bool, ResetDevice_Trampoline, (bool))
 	bool ResetDevice_Detour(bool a)
 	{
 		bool success = ResetDevice_Trampoline(a);
@@ -218,7 +218,7 @@ uint32_t ProcessKeyboardEvents_Detour()
 class C2DPrimitiveManager_Hook
 {
 public:
-	DETOUR_TRAMPOLINE_DEF(void, AddCachedText_Trampoline, (CTextObjectBase* obj))
+	DETOUR_TRAMPOLINE_DEF_MEMBER(C2DPrimitiveManager_Hook, void, AddCachedText_Trampoline, (CTextObjectBase* obj))
 	void AddCachedText_Detour(CTextObjectBase* obj)
 	{
 		if (this == nullptr)
@@ -228,7 +228,7 @@ public:
 	}
 
 #if HAS_DIRECTX_11
-	DETOUR_TRAMPOLINE_DEF(void, Render_Trampoline, (bool, bool))
+	DETOUR_TRAMPOLINE_DEF_MEMBER(C2DPrimitiveManager_Hook, void, Render_Trampoline, (bool, bool))
 	void Render_Detour(bool postProcessing, bool blind)
 	{
 		if (!postProcessing)
@@ -257,7 +257,7 @@ public:
 class ObjectPreviewView_Hook
 {
 public:
-	DETOUR_TRAMPOLINE_DEF(void, Render_Trampoline, ())
+	DETOUR_TRAMPOLINE_DEF_MEMBER(ObjectPreviewView_Hook, void, Render_Trampoline, ())
 	void Render_Detour()
 	{
 		RenderDoc_ScopedEvent e(MQColor(170, 255, 255), L"ObjectPreviewView::Render");

@@ -86,7 +86,7 @@ static int CompareMoneyStrings(SListWndSortInfo* sInfo, GetMoneyFromStringFormat
 class AutoInventory::FindItemWnd_Hook
 {
 public:
-	DETOUR_TRAMPOLINE_DEF(void, Update_Trampoline, ())
+	DETOUR_TRAMPOLINE_DEF_MEMBER(AutoInventory::FindItemWnd_Hook, void, Update_Trampoline, ())
 	void Update_Detour()
 	{
 		CFindItemWnd* pFIWnd = reinterpret_cast<CFindItemWnd*>(this);
@@ -206,7 +206,7 @@ public:
 		}
 	}
 
-	DETOUR_TRAMPOLINE_DEF(int, WndNotification_Trampoline, (CXWnd*, uint32_t, void*))
+	DETOUR_TRAMPOLINE_DEF_MEMBER(AutoInventory::FindItemWnd_Hook, int, WndNotification_Trampoline, (CXWnd*, uint32_t, void*))
 	int WndNotification_Detour(CXWnd* pWnd, uint32_t uiMessage, void* pData)
 	{
 		CFindItemWnd* pThis = reinterpret_cast<CFindItemWnd*>(this);
@@ -635,7 +635,7 @@ public:
 class AutoInventory::CBarterWnd_Hook
 {
 public:
-	DETOUR_TRAMPOLINE_DEF(int, WndNotification_Trampoline, (CXWnd* pWnd, uint32_t uiMessage, void* pData))
+	DETOUR_TRAMPOLINE_DEF_MEMBER(AutoInventory::CBarterWnd_Hook, int, WndNotification_Trampoline, (CXWnd* pWnd, uint32_t uiMessage, void* pData))
 	int WndNotification_Detour(CXWnd* pWnd, uint32_t uiMessage, void* pData)
 	{
 		CBarterWnd* pThis = reinterpret_cast<CBarterWnd*>(this);
@@ -686,7 +686,7 @@ class AutoInventory::CBarterSearchWnd_Hook
 	static inline bool BarterLastSortDirection = true;
 
 public:
-	DETOUR_TRAMPOLINE_DEF(int, WndNotification_Trampoline, (CXWnd* pWnd, uint32_t uiMessage, void* pData))
+	DETOUR_TRAMPOLINE_DEF_MEMBER(AutoInventory::CBarterSearchWnd_Hook, int, WndNotification_Trampoline, (CXWnd* pWnd, uint32_t uiMessage, void* pData))
 	int WndNotification_Detour(CXWnd* pWnd, uint32_t uiMessage, void* pData)
 	{
 		CBarterSearchWnd* pThis = reinterpret_cast<CBarterSearchWnd*>(this);
@@ -745,7 +745,7 @@ public:
 		return WndNotification_Trampoline(pWnd, uiMessage, pData);
 	}
 
-	DETOUR_TRAMPOLINE_DEF(void, UpdateInventoryList_Trampoline, ())
+	DETOUR_TRAMPOLINE_DEF_MEMBER(AutoInventory::CBarterSearchWnd_Hook, void, UpdateInventoryList_Trampoline, ())
 	void UpdateInventoryList_Detour()
 	{
 		UpdateInventoryList_Trampoline();

@@ -463,7 +463,7 @@ void Items(PlayerClient* pChar, const char* szLine)
 		{
 			auto name = GetFriendlyNameForGroundItem(pItem);
 
-			DebugSpew("   Item found - %d: DropID %d %s (%s)", pItem->Item, pItem->DropID, name.c_str(), pItem->Name);
+			DebugSpew("   Item found - %d: DropID %d %s (%s)", pItem->Item.get(), pItem->DropID, name.c_str(), pItem->Name);
 
 			if (szLine[0] == 0 || ci_find_substr(name, szLine) != -1)
 			{

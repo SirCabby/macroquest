@@ -35,7 +35,7 @@
 #include <windows.h>
 #include <wincrypt.h>
 
-#pragma comment(lib, "Crypt32.lib")
+#pragma comment(lib, "crypt32.lib")
 #pragma comment(lib, "sqlite3")
 #pragma comment(lib, "argon2")
 

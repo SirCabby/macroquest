@@ -59,11 +59,13 @@ target_link_libraries(MQ2XTarInfo PRIVATE MQ2Main)
 # PRE_BUILD events
 # ---------------------------------------------------------------------
 
+if(NOT MQ_CROSS_LINUX)
 add_custom_command(TARGET MQ2XTarInfo PRE_BUILD
     COMMAND powershell.exe -ExecutionPolicy Bypass -NoProfile -NonInteractive -File "${CMAKE_SOURCE_DIR}/tools/build_scripts/Plugin_Versioning.ps1" -ProjectName "${PROJECT_NAME}" -ProjectDirectory "${CMAKE_CURRENT_SOURCE_DIR}/"
     COMMENT "Updating version resource for ${PROJECT_NAME}..."
     VERBATIM
 )
+endif()
 
 # ============================================================================
 # MANUAL CONVERSION NOTES

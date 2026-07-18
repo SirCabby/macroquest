@@ -85,7 +85,7 @@ class CSidlManagerHook
 {
 public:
 #if IS_EXPANSION_LEVEL(EXPANSION_LEVEL_COTF)
-	DETOUR_TRAMPOLINE_DEF(CXWnd*, CreateXWnd_Trampoline, (CXWnd*, CControlTemplate*, bool bValue))
+	DETOUR_TRAMPOLINE_DEF_MEMBER(CSidlManagerHook, CXWnd*, CreateXWnd_Trampoline, (CXWnd*, CControlTemplate*, bool bValue))
 	CXWnd* CreateXWnd_Detour(CXWnd* pParent, CControlTemplate* pTemplate, bool bValue)
 	{
 		CXWnd* newXWnd = CreateXWnd_Trampoline(pParent, pTemplate, bValue);
@@ -99,7 +99,7 @@ public:
 		return newXWnd;
 	}
 #else
-	DETOUR_TRAMPOLINE_DEF(CXWnd*, CreateXWnd_Trampoline, (CXWnd*, CControlTemplate*))
+	DETOUR_TRAMPOLINE_DEF_MEMBER(CSidlManagerHook, CXWnd*, CreateXWnd_Trampoline, (CXWnd*, CControlTemplate*))
 		CXWnd* CreateXWnd_Detour(CXWnd* pParent, CControlTemplate* pTemplate)
 	{
 		CXWnd* newXWnd = CreateXWnd_Trampoline(pParent, pTemplate);
@@ -118,7 +118,7 @@ public:
 class CLabelHook
 {
 public:
-	DETOUR_TRAMPOLINE_DEF(void, UpdateText_Trampoline, ())
+	DETOUR_TRAMPOLINE_DEF_MEMBER(CLabelHook, void, UpdateText_Trampoline, ())
 	void UpdateText_Detour()
 	{
 		UpdateText_Trampoline();

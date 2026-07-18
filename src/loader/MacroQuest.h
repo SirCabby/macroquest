@@ -30,15 +30,15 @@
 #include <string_view>
 
 #include <windows.h>
-#include <Windowsx.h>
+#include <windowsx.h>
 
 #define _WIN32_DCOM
 #include <comdef.h>
-#include <Wbemidl.h>
-#include <Tlhelp32.h>
+#include <WbemIdl.h>
+#include <TlHelp32.h>
 #include <Psapi.h>
 #include <shlobj.h>
-#include <Commctrl.h>
+#include <CommCtrl.h>
 #include <dbghelp.h>
 #include <strsafe.h>
 #include <windef.h>

@@ -143,7 +143,7 @@ SearchCheckState SearchState = SearchCheckState::None;
 class CBazaarSearchWnd_Hook
 {
 public:
-	DETOUR_TRAMPOLINE_DEF(void, HandleSearchResults_Trampoline, (CUnSerializeBuffer& buffer))
+	DETOUR_TRAMPOLINE_DEF_MEMBER(CBazaarSearchWnd_Hook, void, HandleSearchResults_Trampoline, (CUnSerializeBuffer& buffer))
 	void HandleSearchResults_Detour(CUnSerializeBuffer& bufferIn)
 	{
 		// Make a copy of the CUnSerializeBuffer so we don't spoil eq's internal tracking.

@@ -1,0 +1,17 @@
+diff --git a/cmake/compilation_flags.cmake b/cmake/compilation_flags.cmake
+index bb10165310..cad665560a 100644
+--- a/cmake/compilation_flags.cmake
++++ b/cmake/compilation_flags.cmake
+@@ -6,7 +6,11 @@ include("cmake/sanitizers.cmake")
+ process_sanitizer(PEPARSE)
+ 
+ if (MSVC)
+-  list(APPEND DEFAULT_CXX_FLAGS /W4 /analyze)
++  list(APPEND DEFAULT_CXX_FLAGS /W4)
++  # clang-cl does not implement MSVC's /analyze static analysis driver flag
++  if (NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
++    list(APPEND DEFAULT_CXX_FLAGS /analyze)
++  endif()
+ 
+   if (CMAKE_BUILD_TYPE STREQUAL "Debug" OR CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo")
+     list(APPEND DEFAULT_CXX_FLAGS /Zi)

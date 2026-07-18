@@ -4235,46 +4235,46 @@ static SpellAttributePredicate<Buff> InternalBuffEvaluate(std::string_view dsl)
 	static auto spaDSL = DSL(
 		[]() -> SpellAttributePredicate<Buff>
 		{ return [](const Buff&) { return false; }; },
-		"spa", DSL::Term([](std::string_view arg) -> SpellAttributePredicate<Buff>
+		"spa", typename DSL::Term([](std::string_view arg) -> SpellAttributePredicate<Buff>
 			{
 				auto spa = GetIntFromString(arg, -1);
 				if (spa < 0)
 					spa = GetSPAFromName(arg);
 				return SpellAffect(static_cast<eEQSPA>(spa));
 			}),
-		"detspa", DSL::Term([](std::string_view arg) -> SpellAttributePredicate<Buff>
+		"detspa", typename DSL::Term([](std::string_view arg) -> SpellAttributePredicate<Buff>
 			{
 				auto spa = GetIntFromString(arg, -1);
 				if (spa < 0)
 					spa = GetSPAFromName(arg);
 				return SpellAffect(static_cast<eEQSPA>(spa), false);
 			}),
-		"cat", DSL::Term([](std::string_view arg) -> SpellAttributePredicate<Buff>
+		"cat", typename DSL::Term([](std::string_view arg) -> SpellAttributePredicate<Buff>
 			{
 				auto cat = GetIntFromString(arg, 0);
 				if (cat == 0)
 					cat = GetSpellCategoryFromName(arg);
 				return SpellCategory(static_cast<eEQSPELLCAT>(cat));
 			}),
-		"subcat", DSL::Term([](std::string_view arg) -> SpellAttributePredicate<Buff>
+		"subcat", typename DSL::Term([](std::string_view arg) -> SpellAttributePredicate<Buff>
 			{
 				auto cat = GetIntFromString(arg, 0);
 				if (cat == 0)
 					cat = GetSpellCategoryFromName(arg);
 				return SpellSubCat(static_cast<eEQSPELLCAT>(cat));
 			}),
-		"class", DSL::Term([](std::string_view arg) -> SpellAttributePredicate<Buff>
+		"class", typename DSL::Term([](std::string_view arg) -> SpellAttributePredicate<Buff>
 			{
 				auto player_class = GetIntFromString(arg, 0);
 				if (player_class == 0)
 					player_class = GetPlayerClass(arg);
 				return SpellClass(static_cast<PlayerClass>(player_class));
 			}),
-		"id", DSL::Term([](std::string_view arg) -> SpellAttributePredicate<Buff>
+		"id", typename DSL::Term([](std::string_view arg) -> SpellAttributePredicate<Buff>
 			{ return SpellIDAttribute(GetIntFromString(arg, 0)); }),
-		"name", DSL::Term([](std::string_view arg) -> SpellAttributePredicate<Buff>
+		"name", typename DSL::Term([](std::string_view arg) -> SpellAttributePredicate<Buff>
 			{ return SpellNameAttribute(arg); }),
-		"caster", DSL::Term([](std::string_view arg) -> SpellAttributePredicate<Buff>
+		"caster", typename DSL::Term([](std::string_view arg) -> SpellAttributePredicate<Buff>
 			{
 				auto id = GetIntFromString(arg, -1);
 				if (id >= 0)
@@ -4288,11 +4288,11 @@ static SpellAttributePredicate<Buff> InternalBuffEvaluate(std::string_view dsl)
 
 				return Caster(arg);
 			}),
-		"and", DSL::Reducer([](SpellAttributePredicate<Buff>&& a, SpellAttributePredicate<Buff>&& b) -> SpellAttributePredicate<Buff>
+		"and", typename DSL::Reducer([](SpellAttributePredicate<Buff>&& a, SpellAttributePredicate<Buff>&& b) -> SpellAttributePredicate<Buff>
 			{ return BothSpellAttribute<Buff>(std::move(a), std::move(b)); }),
-		"or", DSL::Reducer([](SpellAttributePredicate<Buff>&& a, SpellAttributePredicate<Buff>&& b) -> SpellAttributePredicate<Buff>
+		"or", typename DSL::Reducer([](SpellAttributePredicate<Buff>&& a, SpellAttributePredicate<Buff>&& b) -> SpellAttributePredicate<Buff>
 			{ return EitherSpellAttribute<Buff>(std::move(a), std::move(b)); }),
-		"not", DSL::Modifier([](SpellAttributePredicate<Buff>&& a) -> SpellAttributePredicate<Buff>
+		"not", typename DSL::Modifier([](SpellAttributePredicate<Buff>&& a) -> SpellAttributePredicate<Buff>
 			{ return NotSpellAttribute<Buff>(std::move(a)); })
 	);
 

@@ -97,7 +97,7 @@ target_link_libraries(MacroQuest PRIVATE
     spdlog::spdlog
     WIL::WIL
     date::date
-    curl-84::curl-84
+    CURL-84::libcurl
     cpr::cpr
     pe-parse::pe-parse
     protobuf::libprotobuf
@@ -131,6 +131,12 @@ target_compile_options(MacroQuest PRIVATE
 # ---------------------------------------------------------------------
 # Link libraries
 # ---------------------------------------------------------------------
+# The vcxproj supplies these via $(LoaderDependenciesDebug/Release); the vcpkg
+# libraries from those lists arrive through imported targets here, so only the
+# Windows SDK libraries remain.
+set(LoaderDependenciesDebug "d3d11.lib;setupapi.lib;imm32.lib;ws2_32.lib;wldap32.lib;version.lib")
+set(LoaderDependenciesRelease "${LoaderDependenciesDebug}")
+
 target_link_libraries(MacroQuest PRIVATE
     "$<$<CONFIG:Debug>:${LoaderDependenciesDebug}>"
     "$<$<CONFIG:Release>:${LoaderDependenciesRelease}>"

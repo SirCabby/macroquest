@@ -176,13 +176,13 @@ struct DXGISwapChainHook
 {
 	IDXGISwapChain* GetThisSwapChain() { return reinterpret_cast<IDXGISwapChain*>(this); }
 
-	DETOUR_TRAMPOLINE_DEF(ULONG WINAPI, Release_Trampoline, ());
+	DETOUR_TRAMPOLINE_DEF_MEMBER(DXGISwapChainHook, ULONG WINAPI, Release_Trampoline, ());
 	ULONG WINAPI Release_Detour()
 	{
 		return Release_Trampoline();
 	}
 
-	DETOUR_TRAMPOLINE_DEF(HRESULT WINAPI, Present_Trampoline, (UINT, UINT));
+	DETOUR_TRAMPOLINE_DEF_MEMBER(DXGISwapChainHook, HRESULT WINAPI, Present_Trampoline, (UINT, UINT));
 	HRESULT WINAPI Present_Detour(UINT SyncInterval, UINT Flags)
 	{
 		return s_gfxEngine->OnPresent(GetThisSwapChain(), SyncInterval, Flags);
@@ -193,7 +193,7 @@ struct DXGISwapChainHook
 		return reinterpret_cast<DXGISwapChainHook*>(pSwapChain)->Present_Trampoline(SyncInterval, Flags);
 	}
 
-	DETOUR_TRAMPOLINE_DEF(HRESULT WINAPI, SetFullscreenState_Trampoline, (BOOL, IDXGIOutput*));
+	DETOUR_TRAMPOLINE_DEF_MEMBER(DXGISwapChainHook, HRESULT WINAPI, SetFullscreenState_Trampoline, (BOOL, IDXGIOutput*));
 	HRESULT WINAPI SetFullscreenState_Detour(BOOL Fullscreen, IDXGIOutput* target)
 	{
 		return s_gfxEngine->OnSetFullscreenState(GetThisSwapChain(), Fullscreen, target);
@@ -204,7 +204,7 @@ struct DXGISwapChainHook
 		return reinterpret_cast<DXGISwapChainHook*>(pSwapChain)->SetFullscreenState_Trampoline(Fullscreen, target);
 	}
 
-	DETOUR_TRAMPOLINE_DEF(HRESULT WINAPI, ResizeBuffers_Trampoline, (UINT, UINT, UINT, DXGI_FORMAT, UINT));
+	DETOUR_TRAMPOLINE_DEF_MEMBER(DXGISwapChainHook, HRESULT WINAPI, ResizeBuffers_Trampoline, (UINT, UINT, UINT, DXGI_FORMAT, UINT));
 	HRESULT WINAPI ResizeBuffers_Detour(UINT BufferCount, UINT Width, UINT Height, DXGI_FORMAT NewFormat, UINT SwapChainFlags)
 	{
 		return s_gfxEngine->OnResizeBuffers(GetThisSwapChain(), BufferCount, Width, Height, NewFormat, SwapChainFlags);

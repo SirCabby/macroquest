@@ -115,7 +115,7 @@ void AddWindowToList(const CXStr& WindowName, CXWnd* pWnd)
 class CSidlInitHook
 {
 public:
-	DETOUR_TRAMPOLINE_DEF(void, Init_Trampoline, (const CXStr& Name, int A))
+	DETOUR_TRAMPOLINE_DEF_MEMBER(CSidlInitHook, void, Init_Trampoline, (const CXStr& Name, int A))
 	void Init_Detour(const CXStr& Name, int A)
 	{
 		AddWindowToList(Name, reinterpret_cast<CXWnd*>(this));
@@ -124,7 +124,7 @@ public:
 	}
 
 	// FIXME: Maybe this should go elsewhere? Isn't really related to what we're doing here...
-	DETOUR_TRAMPOLINE_DEF(int, CTargetWnd__WndNotification_Tramp, (CXWnd*, uint32_t, void*))
+	DETOUR_TRAMPOLINE_DEF_MEMBER(CSidlInitHook, int, CTargetWnd__WndNotification_Tramp, (CXWnd*, uint32_t, void*))
 	int CTargetWnd__WndNotification_Detour(CXWnd* pWnd, uint32_t uiMessage, void* pData)
 	{
 		if (gUseTradeOnTarget && pTarget && uiMessage == XWM_LCLICK)
@@ -150,7 +150,7 @@ class CXWndManagerHook
 public:
 	// This serves as the effective destructor of the window. Every CXWnd will call this in its
 	// destructor, so this means we do not need to detour the destructor, too.
-	DETOUR_TRAMPOLINE_DEF(int, RemoveWnd_Trampoline, (CXWnd*))
+	DETOUR_TRAMPOLINE_DEF_MEMBER(CXWndManagerHook, int, RemoveWnd_Trampoline, (CXWnd*))
 	int RemoveWnd_Detour(CXWnd* pWnd)
 	{
 		if (pWnd)
@@ -202,7 +202,7 @@ void ReinitializeWindowList()
 class CXMLSOMDocumentBaseHook
 {
 public:
-	DETOUR_TRAMPOLINE_DEF(bool, XMLRead_Trampoline, (const CXStr& A, const CXStr& B, const CXStr& C, const CXStr& D))
+	DETOUR_TRAMPOLINE_DEF_MEMBER(CXMLSOMDocumentBaseHook, bool, XMLRead_Trampoline, (const CXStr& A, const CXStr& B, const CXStr& C, const CXStr& D))
 	bool XMLRead(
 		const CXStr& strPath,
 		const CXStr& strDefaultPath,
@@ -246,7 +246,7 @@ bool DoesFileExist(const char* filename)
 class CMemoryMappedFile
 {
 public:
-	DETOUR_TRAMPOLINE_DEF(bool, SetFile_Trampoline, (const char*, bool, unsigned int))
+	DETOUR_TRAMPOLINE_DEF_MEMBER(CMemoryMappedFile, bool, SetFile_Trampoline, (const char*, bool, unsigned int))
 	bool SetFile_Detour(const char* filename, bool unk8, unsigned int unkC)
 	{
 		std::filesystem::path localfile = filename;
@@ -1970,7 +1970,7 @@ public:
 		ZoneMainUI_Trampoline();
 	}
 
-	DETOUR_TRAMPOLINE_DEF(void, ZoneMainUI_Trampoline, ())
+	DETOUR_TRAMPOLINE_DEF_MEMBER(CDisplay_Detours, void, ZoneMainUI_Trampoline, ())
 
 		void PreZoneMainUI_Detour()
 	{
@@ -1978,7 +1978,7 @@ public:
 		PreZoneMainUI_Trampoline();
 	}
 
-	DETOUR_TRAMPOLINE_DEF(void, PreZoneMainUI_Trampoline, ())
+	DETOUR_TRAMPOLINE_DEF_MEMBER(CDisplay_Detours, void, PreZoneMainUI_Trampoline, ())
 };
 
 //============================================================================

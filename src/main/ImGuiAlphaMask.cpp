@@ -424,7 +424,7 @@ void CreateMaskLayer(ImDrawList* draw_list)
 	const uint8_t bit = s_next_bit;
 	s_next_bit <<= 1;
 	s_accum_bits |= bit;
-	s_mask_stack.emplace_back(bit, s_accum_bits);
+	s_mask_stack.push_back(MaskEntry{ bit, s_accum_bits });
 
 	AlphaMaskParams params = {
 		.WriteMask = bit,

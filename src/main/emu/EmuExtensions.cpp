@@ -136,7 +136,7 @@ void ConvertItemTags_Detour(CXStr& text, bool canDisplay)
 class CChatWindowHook : public CChatWindow
 {
 public:
-	DETOUR_TRAMPOLINE_DEF(int, WndNotification_Trampoline, (CXWnd*, uint32_t, void*));
+	DETOUR_TRAMPOLINE_DEF_MEMBER(CChatWindowHook, int, WndNotification_Trampoline, (CXWnd*, uint32_t, void*));
 	int WndNotification_Detour(CXWnd* sender, uint32_t message, void* data)
 	{
 		if (message == XWM_SPELL_LINK)

@@ -68,7 +68,7 @@ static void InitializeUI()
 class CDisplayHook
 {
 public:
-	DETOUR_TRAMPOLINE_DEF(void, CleanUI_Trampoline, ())
+	DETOUR_TRAMPOLINE_DEF_MEMBER(CDisplayHook, void, CleanUI_Trampoline, ())
 	void CleanUI_Detour()
 	{
 		ShutdownUI();
@@ -76,7 +76,7 @@ public:
 	}
 
 #ifdef CDisplay__RestartUI_x
-	DETOUR_TRAMPOLINE_DEF(void, RestartUI_Trampoline, ())
+	DETOUR_TRAMPOLINE_DEF_MEMBER(CDisplayHook, void, RestartUI_Trampoline, ())
 	void RestartUI_Detour()
 	{
 		// This is similar to ReloadUI, but it doesn't reload XML. This is the function
@@ -90,14 +90,14 @@ public:
 #endif // CDisplay__RestartUI_x
 
 #if !IS_EXPANSION_LEVEL(EXPANSION_LEVEL_COTF)
-	DETOUR_TRAMPOLINE_DEF(void, ReloadUI_Trampoline, (bool))
+	DETOUR_TRAMPOLINE_DEF_MEMBER(CDisplayHook, void, ReloadUI_Trampoline, (bool))
 	void ReloadUI_Detour(bool UseINI)
 	{
 		ReloadUI_Trampoline(UseINI);
 		InitializeUI();
 	}
 #else
-	DETOUR_TRAMPOLINE_DEF(void, ReloadUI_Trampoline, (bool, bool))
+	DETOUR_TRAMPOLINE_DEF_MEMBER(CDisplayHook, void, ReloadUI_Trampoline, (bool, bool))
 	void ReloadUI_Detour(bool UseINI, bool bUnknown)
 	{
 		ReloadUI_Trampoline(UseINI, bUnknown);
@@ -105,7 +105,7 @@ public:
 	}
 #endif
 
-	DETOUR_TRAMPOLINE_DEF(void, InitCharSelectUI_Trampoline, ())
+	DETOUR_TRAMPOLINE_DEF_MEMBER(CDisplayHook, void, InitCharSelectUI_Trampoline, ())
 	void InitCharSelectUI_Detour()
 	{
 		InitCharSelectUI_Trampoline();
@@ -165,7 +165,7 @@ void DrawHUDText(const char* Text, int X, int Y, unsigned int Argb, int Font)
 class EQ_LoadingSHook
 {
 public:
-	DETOUR_TRAMPOLINE_DEF(void, SetProgressBar_Trampoline, (int, char const*))
+	DETOUR_TRAMPOLINE_DEF_MEMBER(EQ_LoadingSHook, void, SetProgressBar_Trampoline, (int, char const*))
 	void SetProgressBar_Detour(int A, char const* B)
 	{
 		if (gbMQ2LoadingMsg)

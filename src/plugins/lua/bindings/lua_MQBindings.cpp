@@ -468,7 +468,7 @@ static void lua_pickle(sol::this_state L, std::string_view file_path, sol::table
 	std::filesystem::create_directories(path.parent_path(), ec);
 	if (ec)
 	{
-		LuaError("Failed to create directory for pickling %.*s with error: %s", file_path.size(), file_path.data(), ec.message());
+		LuaError("Failed to create directory for pickling %.*s with error: %s", file_path.size(), file_path.data(), ec.message().c_str());
 		return;
 	}
 

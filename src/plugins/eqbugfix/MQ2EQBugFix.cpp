@@ -60,7 +60,7 @@ class CUnSerializeBuffer_BugFix
 	uint32_t    m_offset = 0;
 
 public:
-	DETOUR_TRAMPOLINE_DEF(bool, GetString_Trampoline, (char* dest, unsigned int destSize))
+	DETOUR_TRAMPOLINE_DEF_MEMBER(CUnSerializeBuffer_BugFix, bool, GetString_Trampoline, (char* dest, unsigned int destSize))
 	bool GetString_Detour(char* dest, unsigned int destSize)
 	{
 		// Use our own implementation which does not have the bug.
