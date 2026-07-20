@@ -137,6 +137,10 @@ void ReportFailedInjection(InjectResult result, DWORD pid);
 
 // Utility
 bool IsRunningUnderWine();
+// Opens a file, folder, or url with its associated application ("open" or
+// "explore" verb). Under wine the target is handed to the host desktop's
+// opener instead, so it lands in the native file manager/editor/browser.
+void ShellOpen(const char* verb, const std::string& target, const char* workingDir = nullptr);
 std::string GetVersionStringLocal(const std::filesystem::path& filePath);
 std::string GetVersionStringRemote(const std::string& versionURL);
 void ShowWarningBlocking(const std::string& Message);

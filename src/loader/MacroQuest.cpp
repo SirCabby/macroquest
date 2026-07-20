@@ -381,7 +381,7 @@ void ShowLoggingSettings()
 {
 	if (ImGui::Button("Open Logs Folder"))
 	{
-		ShellExecuteA(nullptr, "explore", internal_paths::Logs.c_str(), nullptr, nullptr, SW_SHOW);
+		ShellOpen("explore", internal_paths::Logs);
 	}
 
 	ImGui::NewLine();
@@ -1113,7 +1113,7 @@ static void RebuildTrayMenu()
 	{
 		const int folders = TrayMenuAdd('i', 0, "Open Folder");
 		const auto explore = [](const std::string& path)
-			{ ShellExecuteA(nullptr, "explore", path.c_str(), nullptr, nullptr, SW_SHOW); };
+			{ ShellOpen("explore", path); };
 		TrayMenuAdd('i', folders, "MacroQuest Root", [explore] { explore(internal_paths::MQRoot); });
 		TrayMenuAdd('i', folders, "Config", [explore] { explore(internal_paths::Config); });
 		TrayMenuAdd('i', folders, "Macros", [explore] { explore(internal_paths::Macros); });
@@ -1123,7 +1123,7 @@ static void RebuildTrayMenu()
 
 		const int sites = TrayMenuAdd('i', 0, "MQ Sites");
 		const auto open = [](const char* url)
-			{ ShellExecuteA(nullptr, "open", url, nullptr, nullptr, SW_SHOW); };
+			{ ShellOpen("open", url); };
 		TrayMenuAdd('i', sites, "GitHub", [open] { open("https://github.com/macroquest/macroquest"); });
 		TrayMenuAdd('i', sites, "Issue Tracker", [open] { open("https://github.com/macroquest/macroquest/issues"); });
 		TrayMenuAdd('s', sites, {});
@@ -1147,13 +1147,13 @@ static void RebuildTrayMenu()
 				}
 
 				if (exists(pathChangeLog, ec))
-					ShellExecuteA(nullptr, "open", pathChangeLog.string().c_str(), nullptr, nullptr, SW_SHOW);
+					ShellOpen("open", pathChangeLog.string());
 				else
 					LauncherImGui::OpenMessageBox(nullptr, fmt::format("Could not find CHANGELOG.md: {}", pathChangeLog.string()), "View Changelog");
 			});
 
 		TrayMenuAdd('i', 0, "INI File", []
-			{ ShellExecuteA(nullptr, "open", internal_paths::MQini.c_str(), nullptr, internal_paths::MQRoot.c_str(), SW_SHOW); });
+			{ ShellOpen("open", internal_paths::MQini, internal_paths::MQRoot.c_str()); });
 	}
 	TrayMenuAdd('s', 0, {});
 
@@ -1585,7 +1585,7 @@ static void DrawTextLink(const std::string& label, const std::string& url)
 	{
 		if (ImGui::IsMouseClicked(ImGuiMouseButton_Left))
 		{
-			ShellExecuteA(nullptr, "open", url.c_str(), nullptr, nullptr, SW_SHOW);
+			ShellOpen("open", url);
 		}
 		AddUnderline(ImGui::GetStyle().Colors[ImGuiCol_ButtonHovered]);
 		ImGui::SetTooltip(ICON_FA_LINK " Open in default browser\n%s", url.c_str());
@@ -1683,17 +1683,17 @@ void ShowMacroQuestMenu()
 	if (ImGui::BeginMenu("Open Folder"))
 	{
 		if (ImGui::MenuItem("MacroQuest Root"))
-			ShellExecuteA(nullptr, "explore", internal_paths::MQRoot.c_str(), nullptr, nullptr, SW_SHOW);
+			ShellOpen("explore", internal_paths::MQRoot);
 		if (ImGui::MenuItem("Config"))
-			ShellExecuteA(nullptr, "explore", internal_paths::Config.c_str(), nullptr, nullptr, SW_SHOW);
+			ShellOpen("explore", internal_paths::Config);
 		if (ImGui::MenuItem("Macros"))
-			ShellExecuteA(nullptr, "explore", internal_paths::Macros.c_str(), nullptr, nullptr, SW_SHOW);
+			ShellOpen("explore", internal_paths::Macros);
 		if (ImGui::MenuItem("Resources"))
-			ShellExecuteA(nullptr, "explore", internal_paths::Resources.c_str(), nullptr, nullptr, SW_SHOW);
+			ShellOpen("explore", internal_paths::Resources);
 		if (ImGui::MenuItem("Logs"))
-			ShellExecuteA(nullptr, "explore", internal_paths::Logs.c_str(), nullptr, nullptr, SW_SHOW);
+			ShellOpen("explore", internal_paths::Logs);
 		if (ImGui::MenuItem("Crash Dumps"))
-			ShellExecuteA(nullptr, "explore", internal_paths::CrashDumps.c_str(), nullptr, nullptr, SW_SHOW);
+			ShellOpen("explore", internal_paths::CrashDumps);
 
 		ImGui::EndMenu();
 	}
@@ -1701,18 +1701,18 @@ void ShowMacroQuestMenu()
 	if (ImGui::BeginMenu("MQ Sites"))
 	{
 		if (ImGui::MenuItem("GitHub"))
-			ShellExecuteA(nullptr, "open", "https://github.com/macroquest/macroquest", nullptr, nullptr, SW_SHOW);
+			ShellOpen("open", "https://github.com/macroquest/macroquest");
 		if (ImGui::MenuItem("Issue Tracker"))
-			ShellExecuteA(nullptr, "open", "https://github.com/macroquest/macroquest/issues", nullptr, nullptr, SW_SHOW);
+			ShellOpen("open", "https://github.com/macroquest/macroquest/issues");
 
 		ImGui::Separator();
 
 		if (ImGui::MenuItem("Website"))
-			ShellExecuteA(nullptr, "open", "https://macroquest.org", nullptr, nullptr, SW_SHOW);
+			ShellOpen("open", "https://macroquest.org");
 		if (ImGui::MenuItem("Forums"))
-			ShellExecuteA(nullptr, "open", "https://macroquest.org/phpBB3", nullptr, nullptr, SW_SHOW);
+			ShellOpen("open", "https://macroquest.org/phpBB3");
 		if (ImGui::MenuItem("Wiki"))
-			ShellExecuteA(nullptr, "open", "https://docs.macroquest.org", nullptr, nullptr, SW_SHOW);
+			ShellOpen("open", "https://docs.macroquest.org");
 
 		ImGui::EndMenu();
 	}
@@ -1738,7 +1738,7 @@ void ShowMacroQuestMenu()
 
 		if (exists(pathChangeLog))
 		{
-			ShellExecuteA(nullptr, "open", pathChangeLog.string().c_str(), nullptr, nullptr, SW_SHOW);
+			ShellOpen("open", pathChangeLog.string());
 		}
 		else
 		{
@@ -1747,7 +1747,7 @@ void ShowMacroQuestMenu()
 	}
 
 	if (ImGui::MenuItem("INI File"))
-		ShellExecuteA(nullptr, "open", internal_paths::MQini.c_str(), nullptr, internal_paths::MQRoot.c_str(), SW_SHOW);
+		ShellOpen("open", internal_paths::MQini, internal_paths::MQRoot.c_str());
 }
 
 void ShowEQBCMenu()

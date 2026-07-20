@@ -14,8 +14,12 @@
 
 #include "MacroQuest.h"
 
+#include "mq/base/WString.h"
+
 #include <spdlog/spdlog.h>
 #include <cpr/cpr.h>
+
+#include <shellapi.h>
 
 bool IsRunningUnderWine()
 {
@@ -25,6 +29,33 @@ bool IsRunningUnderWine()
 			return ntdll != nullptr && ::GetProcAddress(ntdll, "wine_get_version") != nullptr;
 		}();
 	return isWine;
+}
+
+void ShellOpen(const char* verb, const std::string& target, const char* workingDir /* = nullptr */)
+{
+	if (IsRunningUnderWine())
+	{
+		// Wine's file associations resolve to its builtin explorer/notepad (or
+		// to nothing at all for extensions like .md). winebrowser translates
+		// DOS paths to unix paths and hands them to the host desktop's opener
+		// (xdg-open), so folders, documents, and urls land in the user's native
+		// file manager, editor, or browser instead.
+		std::wstring commandLine = mq::utf8_to_wstring(fmt::format("winebrowser.exe \"{}\"", target));
+
+		STARTUPINFOW si = { sizeof(si) };
+		PROCESS_INFORMATION pi = {};
+		if (::CreateProcessW(L"C:\\windows\\system32\\winebrowser.exe", commandLine.data(),
+			nullptr, nullptr, FALSE, CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi))
+		{
+			::CloseHandle(pi.hThread);
+			::CloseHandle(pi.hProcess);
+			return;
+		}
+
+		SPDLOG_WARN("Failed to launch winebrowser for {}; falling back to ShellExecute", target);
+	}
+
+	ShellExecuteA(nullptr, verb, target.c_str(), nullptr, workingDir, SW_SHOW);
 }
 
 std::string GetVersionStringLocal(const std::filesystem::path& filePath)
