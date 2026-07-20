@@ -30,7 +30,7 @@
  *   loader -> helper:
  *     menu-reset\n
  *     menu-item <id> <parentId> <kind> <label>\n     kind: i=item, s=separator, h=disabled header
- *     menu-commit\n                                  (helper emits LayoutUpdated)
+ *     menu-commit\n                                  (helper emits LayoutUpdated if the model changed)
  *
  *   helper -> loader:
  *     activate\n                (left click / SNI Activate)
@@ -87,6 +87,34 @@ static struct menu_item* g_items = NULL;
 static size_t g_item_count = 0;
 static size_t g_item_capacity = 0;
 static unsigned g_revision = 1;
+
+/*
+ * Plasma's dbusmenu importer updates existing actions in place but never
+ * converts a plain action into a submenu parent (children-display is only
+ * honored when the action is first created). Any menu id that changes meaning
+ * across a layout update therefore keeps its old behavior in the panel -- the
+ * builtin menu's plain item 3 ("Exit") would permanently block the loader
+ * model's item 3 ("Open Folder") from getting its submenu. Expose ids under a
+ * per-layout generation namespace instead: whenever the layout actually
+ * changes, every item appears to the panel as a brand new id and is created
+ * fresh. Ids from stale generations (a panel acting on an old layout) map to
+ * -1 and are ignored.
+ */
+#define MENU_ID_STRIDE 100000
+static unsigned g_generation = 1;
+
+static int expose_id(int id)
+{
+	return id == 0 ? 0 : id + (int)(g_generation * MENU_ID_STRIDE);
+}
+
+static int unexpose_id(int id)
+{
+	if (id == 0)
+		return 0;
+	id -= (int)(g_generation * MENU_ID_STRIDE);
+	return (id > 0 && id < MENU_ID_STRIDE) ? id : -1;
+}
 
 /* items being accumulated between menu-reset and menu-commit */
 static struct menu_item* g_pending = NULL;
@@ -221,12 +249,13 @@ static int append_item_props(sd_bus_message* reply, const struct menu_item* item
 	return sd_bus_message_close_container(reply);
 }
 
-/* Append one (ia{sv}av) item struct including its subtree. */
+/* Append one (ia{sv}av) item struct including its subtree. Takes model ids;
+ * serializes generation-namespaced ids. */
 static int append_item_struct(sd_bus_message* reply, int id)
 {
 	int r = sd_bus_message_open_container(reply, 'r', "ia{sv}av");
 	if (r < 0) return r;
-	r = sd_bus_message_append(reply, "i", id);
+	r = sd_bus_message_append(reply, "i", expose_id(id));
 	if (r < 0) return r;
 
 	if (id == 0)
@@ -279,7 +308,7 @@ static int menu_get_layout(sd_bus_message* m, void* userdata, sd_bus_error* erro
 	if (r < 0) return r;
 
 	sd_bus_message_append(reply, "u", g_revision);
-	append_item_struct(reply, parentId);
+	append_item_struct(reply, unexpose_id(parentId));
 
 	r = sd_bus_send(NULL, reply, NULL);
 	sd_bus_message_unref(reply);
@@ -299,7 +328,7 @@ static int menu_get_group_properties(sd_bus_message* m, void* userdata, sd_bus_e
 		while (sd_bus_message_read_basic(m, 'i', &id) > 0)
 		{
 			if (requestedCount < (int)(sizeof(requested) / sizeof(requested[0])))
-				requested[requestedCount++] = id;
+				requested[requestedCount++] = unexpose_id(id);
 		}
 		sd_bus_message_exit_container(m);
 	}
@@ -321,7 +350,7 @@ static int menu_get_group_properties(sd_bus_message* m, void* userdata, sd_bus_e
 				continue;
 		}
 		sd_bus_message_open_container(reply, 'r', "ia{sv}");
-		sd_bus_message_append(reply, "i", g_items[i].id);
+		sd_bus_message_append(reply, "i", expose_id(g_items[i].id));
 		append_item_props(reply, &g_items[i]);
 		sd_bus_message_close_container(reply);
 	}
@@ -339,7 +368,7 @@ static int menu_get_property(sd_bus_message* m, void* userdata, sd_bus_error* er
 	const char* name = NULL;
 	sd_bus_message_read(m, "is", &id, &name);
 
-	const struct menu_item* item = find_menu_item(id);
+	const struct menu_item* item = find_menu_item(unexpose_id(id));
 	const char* value = "";
 	if (item != NULL && name != NULL)
 	{
@@ -366,7 +395,7 @@ static int menu_event(sd_bus_message* m, void* userdata, sd_bus_error* error)
 	if (sd_bus_message_read(m, "is", &id, &eventId) >= 0
 		&& eventId != NULL && strcmp(eventId, "clicked") == 0)
 	{
-		menu_item_clicked(id);
+		menu_item_clicked(unexpose_id(id));
 	}
 	return sd_bus_reply_method_return(m, "");
 }
@@ -388,7 +417,7 @@ static int menu_event_group(sd_bus_message* m, void* userdata, sd_bus_error* err
 			sd_bus_message_skip(m, "vu");
 			sd_bus_message_exit_container(m);
 			if (eventId != NULL && strcmp(eventId, "clicked") == 0)
-				menu_item_clicked(id);
+				menu_item_clicked(unexpose_id(id));
 		}
 		sd_bus_message_exit_container(m);
 	}
@@ -472,6 +501,21 @@ static const sd_bus_vtable menu_vtable[] = {
 /* Socket protocol (loader -> helper)                                        */
 /* ------------------------------------------------------------------------- */
 
+static int item_lists_equal(const struct menu_item* a, size_t na,
+	const struct menu_item* b, size_t nb)
+{
+	if (na != nb)
+		return 0;
+	for (size_t i = 0; i < na; ++i)
+	{
+		if (a[i].id != b[i].id || a[i].parent != b[i].parent
+			|| a[i].kind != b[i].kind || a[i].builtin_line != b[i].builtin_line
+			|| strcmp(a[i].label, b[i].label) != 0)
+			return 0;
+	}
+	return 1;
+}
+
 static void handle_loader_line(char* line)
 {
 	if (strcmp(line, "menu-reset") == 0)
@@ -492,6 +536,15 @@ static void handle_loader_line(char* line)
 	}
 	else if (strcmp(line, "menu-commit") == 0)
 	{
+		/* The loader re-sends the model on every menu open. If nothing
+		 * changed, keep serving the current layout: a LayoutUpdated here
+		 * would make the panel rebuild the very menu the user has open. */
+		if (item_lists_equal(g_pending, g_pending_count, g_items, g_item_count))
+		{
+			item_list_free(&g_pending, &g_pending_count, &g_pending_capacity);
+			return;
+		}
+
 		item_list_free(&g_items, &g_item_count, &g_item_capacity);
 		g_items = g_pending;
 		g_item_count = g_pending_count;
@@ -500,6 +553,8 @@ static void handle_loader_line(char* line)
 		g_pending_count = 0;
 		g_pending_capacity = 0;
 
+		if (++g_generation > 20000)
+			g_generation = 1;
 		++g_revision;
 		if (g_bus != NULL)
 			sd_bus_emit_signal(g_bus, "/MenuBar", "com.canonical.dbusmenu",
