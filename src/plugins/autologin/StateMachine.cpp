@@ -189,6 +189,71 @@ public:
 	}
 };
 
+// If the target server has a login host override configured, rewrite the client's
+// parsed eqhost.txt host list in memory so the connection goes there instead —
+// eqhost.txt itself is never touched. The original values are captured once so a
+// later login in the same client (e.g. a different server) can restore them.
+static void ApplyServerHostOverride(const ProfileRecord* record)
+{
+	if (!g_pLoginClient)
+		return;
+
+	static std::vector<std::pair<CXStr, int>> s_originalHosts;
+	if (s_originalHosts.empty())
+	{
+		for (LoginClient::Host* pHost : g_pLoginClient->Hosts)
+		{
+			if (pHost)
+				s_originalHosts.emplace_back(pHost->Name, pHost->Port);
+		}
+	}
+
+	std::optional<std::string> override_host;
+	if (record && !record->serverName.empty())
+		override_host = login::db::ReadServerHostOverride(record->serverName);
+
+	if (override_host && !override_host->empty())
+	{
+		std::string host = *override_host;
+		int port = 0;
+		if (const size_t colon = host.rfind(':'); colon != std::string::npos)
+		{
+			port = GetIntFromString(host.substr(colon + 1), 0);
+			host = host.substr(0, colon);
+		}
+
+		for (LoginClient::Host* pHost : g_pLoginClient->Hosts)
+		{
+			if (!pHost)
+				continue;
+
+			if (!host.empty())
+				pHost->Name = host.c_str();
+			if (port > 0)
+				pHost->Port = port;
+		}
+
+		AutoLoginDebug(fmt::format("Connect: login host override for {} -> {}:{}", record->serverName, host, port));
+	}
+	else if (!s_originalHosts.empty())
+	{
+		size_t i = 0;
+		for (LoginClient::Host* pHost : g_pLoginClient->Hosts)
+		{
+			if (i >= s_originalHosts.size())
+				break;
+
+			if (pHost)
+			{
+				pHost->Name = s_originalHosts[i].first;
+				pHost->Port = s_originalHosts[i].second;
+			}
+
+			++i;
+		}
+	}
+}
+
 class Connect : public Login
 {
 public:
@@ -210,6 +275,8 @@ public:
 			{
 				record = tempProfile;
 			}
+
+			ApplyServerHostOverride(record.get());
 
 			if (record
 				&& !record->accountName.empty()

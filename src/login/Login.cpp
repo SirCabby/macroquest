@@ -1459,7 +1459,7 @@ login::db::Results<std::pair<std::string, std::string>> login::db::ListServerMat
 		R"(
 			SELECT short_name, long_name FROM servers
 			WHERE LOWER(short_name) LIKE '%' || LOWER(?) || '%'
-			   OR LOWER(long name) LIKE '%' || LOWER(?) || '%')",
+			   OR LOWER(long_name) LIKE '%' || LOWER(?) || '%')",
 		[search](sqlite3_stmt* stmt, sqlite3*)
 		{
 			BindText(stmt, 1, search);
@@ -1518,6 +1518,62 @@ void login::db::DeleteServer(std::string_view short_name, std::string_view long_
 			BindText(stmt, 2, long_name);
 
 			sqlite3_step(stmt);
+		});
+}
+
+void login::db::WriteServerHostOverride(std::string_view short_name, std::string_view long_name, std::string_view host_override)
+{
+	WithDb::Query<void>(SQLITE_OPEN_READWRITE,
+		R"(
+			UPDATE servers SET custom_host = ? WHERE short_name = LOWER(?) AND long_name = LOWER(?))",
+		[short_name, long_name, host_override](sqlite3_stmt* stmt, sqlite3* db)
+		{
+			if (host_override.empty())
+				sqlite3_bind_null(stmt, 1);
+			else
+				BindText(stmt, 1, host_override);
+
+			BindText(stmt, 2, short_name);
+			BindText(stmt, 3, long_name);
+
+			sqlite3_step(stmt);
+		});
+}
+
+std::optional<std::string> login::db::ReadServerHostOverride(std::string_view short_name, std::string_view long_name)
+{
+	return WithDb::Query<std::optional<std::string>>(SQLITE_OPEN_READONLY,
+		R"(
+			SELECT custom_host FROM servers
+			WHERE short_name = LOWER(?) AND long_name = LOWER(?) AND custom_host IS NOT NULL
+			LIMIT 1)",
+		[short_name, long_name](sqlite3_stmt* stmt, sqlite3* db) -> std::optional<std::string>
+		{
+			BindText(stmt, 1, short_name);
+			BindText(stmt, 2, long_name);
+
+			if (sqlite3_step(stmt) == SQLITE_ROW)
+				return ReadText(stmt, 0);
+
+			return {};
+		});
+}
+
+std::optional<std::string> login::db::ReadServerHostOverride(std::string_view server_name)
+{
+	return WithDb::Query<std::optional<std::string>>(SQLITE_OPEN_READONLY,
+		R"(
+			SELECT custom_host FROM servers
+			WHERE (short_name = LOWER(?1) OR long_name = LOWER(?1)) AND custom_host IS NOT NULL
+			ORDER BY last_seen DESC LIMIT 1)",
+		[server_name](sqlite3_stmt* stmt, sqlite3* db) -> std::optional<std::string>
+		{
+			BindText(stmt, 1, server_name);
+
+			if (sqlite3_step(stmt) == SQLITE_ROW)
+				return ReadText(stmt, 0);
+
+			return {};
 		});
 }
 
@@ -2532,6 +2588,15 @@ static bool MigrateVersion7Schema()
 	)");
 }
 
+// adds a per-server login host override, used to redirect the client's login
+// connection in memory (in place of what eqhost.txt says) at the connect screen
+static bool MigrateVersion8Schema()
+{
+	return MigrateTableSchema(R"(
+		ALTER TABLE servers ADD custom_host text;
+	)");
+}
+
 // sqlite init concurrency should be solved by sqlite, if two processes try to create the db at the same time, one will lock
 bool login::db::InitDatabase(const std::string& path)
 {
@@ -2605,6 +2670,9 @@ bool login::db::InitDatabase(const std::string& path)
 		[[fallthrough]];
 	case 7:
 		migrations.push_back(&MigrateVersion7Schema);
+		[[fallthrough]];
+	case 8:
+		migrations.push_back(&MigrateVersion8Schema);
 		[[fallthrough]];
 	default:
 		break;

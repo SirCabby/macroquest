@@ -499,6 +499,14 @@ void EditBehavior(ServerNameInfo& serverNameInfo, const char* name, const Action
 		ImGui::Spacing();
 
 		ImGui::InputText("Long Name", &serverNameInfo.LongName);
+		ImGui::Spacing();
+
+		ImGui::InputText("Login Host Override", &serverNameInfo.HostOverride);
+		ImGui::SameLine(); mq::imgui::HelpMarker(
+			"Optional host:port (e.g. 192.168.1.7:5999).\n"
+			"When launching a character on this server, AutoLogin redirects the client's "
+			"login connection to this address in memory, overriding eqhost.txt.\n"
+			"Leave empty to use eqhost.txt as-is.");
 
 		DefaultModalButtons(ok_action);
 

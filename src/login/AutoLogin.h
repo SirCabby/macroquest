@@ -65,6 +65,7 @@ struct ServerNameInfo
 {
 	std::string ShortName;
 	std::string LongName;
+	std::string HostOverride;
 
 	static constexpr std::string_view label = "Server Name";
 

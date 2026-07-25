@@ -482,12 +482,19 @@ std::string ServerNameInfo::Preview() const
 
 void ServerNameInfo::Fill()
 {
+	if (const auto host = login::db::ReadServerHostOverride(ShortName, LongName))
+		HostOverride = *host;
+	else
+		HostOverride.clear();
 }
 
 void ServerNameInfo::Update(const ServerNameInfo&) const
 {
 	if (Valid())
+	{
 		login::db::CreateOrUpdateServer(ShortName, LongName);
+		login::db::WriteServerHostOverride(ShortName, LongName, HostOverride);
+	}
 }
 
 void ServerNameInfo::Delete() const
