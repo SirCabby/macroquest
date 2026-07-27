@@ -43,15 +43,22 @@
  * served. The helper exits when the socket closes (loader shutdown) or when
  * it cannot register with a StatusNotifierWatcher.
  *
- * Spawned by the loader as:  mq-tray-helper <port> [title]
+ * Spawned by the loader as:  mq-tray-helper <port> [title] [logfile]
+ *
+ * We are spawned through wine's start.exe, so our stderr points at the
+ * loader's - interleaved with dxvk's output when it survives at all. Given a
+ * logfile argument we reopen stderr onto it so that every exit path below
+ * leaves a record; without one a helper that dies on startup is invisible.
  */
 
 #include <systemd/sd-bus.h>
 
 #include <arpa/inet.h>
+#include <errno.h>
 #include <netinet/in.h>
 #include <poll.h>
 #include <signal.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -63,6 +70,18 @@
 static int g_sock = -1;
 static const char* g_title = "MacroQuest";
 static sd_bus* g_bus = NULL;
+
+__attribute__((format(printf, 1, 2)))
+static void log_msg(const char* format, ...)
+{
+	va_list args;
+	va_start(args, format);
+	fputs("mq-tray-helper: ", stderr);
+	vfprintf(stderr, format, args);
+	fputc('\n', stderr);
+	fflush(stderr);
+	va_end(args);
+}
 
 static void send_line(const char* line)
 {
@@ -568,9 +587,27 @@ static int drain_loader_socket(void)
 	static char buffer[16384];
 	static size_t buffered = 0;
 
+	if (buffered + 1 >= sizeof(buffer))
+	{
+		/* A single line longer than the buffer would leave a zero-length recv
+		 * window, and recv() returning 0 for that is indistinguishable from
+		 * the loader hanging up. Resync on the next newline instead of dying
+		 * on what is only a malformed menu entry. */
+		log_msg("menu line exceeded %zu bytes; discarding buffered input",
+			sizeof(buffer) - 1);
+		buffered = 0;
+	}
+
 	ssize_t received = recv(g_sock, buffer + buffered, sizeof(buffer) - buffered - 1, 0);
-	if (received <= 0)
+	if (received < 0)
+	{
+		if (errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK)
+			return 1;
+		log_msg("recv from loader failed: %s", strerror(errno));
 		return 0;
+	}
+	if (received == 0)
+		return 0; /* orderly shutdown by the loader */
 	buffered += (size_t)received;
 	buffer[buffered] = '\0';
 
@@ -702,7 +739,7 @@ static int register_with_watcher(sd_bus* bus, const char* busName)
 		"org.kde.StatusNotifierWatcher", "RegisterStatusNotifierItem",
 		&error, NULL, "s", busName);
 	if (r < 0)
-		fprintf(stderr, "mq-tray-helper: RegisterStatusNotifierItem failed: %s\n",
+		log_msg("RegisterStatusNotifierItem failed: %s",
 			error.message ? error.message : strerror(-r));
 	sd_bus_error_free(&error);
 	return r;
@@ -732,12 +769,20 @@ int main(int argc, char** argv)
 {
 	if (argc < 2)
 	{
-		fprintf(stderr, "usage: mq-tray-helper <port> [title]\n");
+		fprintf(stderr, "usage: mq-tray-helper <port> [title] [logfile]\n");
 		return 2;
 	}
 	int port = atoi(argv[1]);
 	if (argc > 2)
 		g_title = argv[2];
+
+	/* Take over stderr before anything can fail, so it gets recorded. */
+	if (argc > 3 && argv[3][0] != '\0')
+	{
+		if (freopen(argv[3], "w", stderr) != NULL)
+			setvbuf(stderr, NULL, _IOLBF, 0);
+	}
+	log_msg("starting: port %d, title \"%s\"", port, g_title);
 
 	signal(SIGPIPE, SIG_IGN);
 	install_builtin_menu();
@@ -750,13 +795,14 @@ int main(int argc, char** argv)
 	addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
 	if (connect(g_sock, (struct sockaddr*)&addr, sizeof(addr)) != 0)
 	{
-		fprintf(stderr, "mq-tray-helper: cannot connect to loader on port %d\n", port);
+		log_msg("cannot connect to loader on port %d: %s", port, strerror(errno));
 		return 1;
 	}
 
-	if (sd_bus_open_user(&g_bus) < 0)
+	int busError = sd_bus_open_user(&g_bus);
+	if (busError < 0)
 	{
-		fprintf(stderr, "mq-tray-helper: cannot connect to session bus\n");
+		log_msg("cannot connect to session bus: %s", strerror(-busError));
 		return 1;
 	}
 
@@ -767,16 +813,17 @@ int main(int argc, char** argv)
 		|| sd_bus_add_object_vtable(g_bus, &menuSlot, "/MenuBar",
 			"com.canonical.dbusmenu", menu_vtable, NULL) < 0)
 	{
-		fprintf(stderr, "mq-tray-helper: cannot export objects\n");
+		log_msg("cannot export objects");
 		return 1;
 	}
 
 	/* Well-known name per the SNI convention */
 	static char busName[64];
 	snprintf(busName, sizeof(busName), "org.kde.StatusNotifierItem-%d-1", (int)getpid());
-	if (sd_bus_request_name(g_bus, busName, 0) < 0)
+	int nameError = sd_bus_request_name(g_bus, busName, 0);
+	if (nameError < 0)
 	{
-		fprintf(stderr, "mq-tray-helper: cannot acquire bus name %s\n", busName);
+		log_msg("cannot acquire bus name %s: %s", busName, strerror(-nameError));
 		return 1;
 	}
 
@@ -792,13 +839,18 @@ int main(int argc, char** argv)
 	if (register_with_watcher(g_bus, busName) < 0)
 		return 1;
 
+	log_msg("registered %s; serving the tray", busName);
+
 	for (;;)
 	{
 		int r;
 		while ((r = sd_bus_process(g_bus, NULL)) > 0)
 			;
 		if (r < 0)
+		{
+			log_msg("sd_bus_process failed: %s", strerror(-r));
 			break;
+		}
 
 		uint64_t timeoutUsec = UINT64_MAX;
 		sd_bus_get_timeout(g_bus, &timeoutUsec);
@@ -816,12 +868,20 @@ int main(int argc, char** argv)
 			timeoutMs = (int)(timeoutUsec > 60u * 1000 * 1000 ? 60000 : timeoutUsec / 1000);
 
 		if (poll(fds, 2, timeoutMs) < 0)
+		{
+			if (errno == EINTR)
+				continue;
+			log_msg("poll failed: %s", strerror(errno));
 			break;
+		}
 
 		if (fds[1].revents != 0)
 		{
 			if (!drain_loader_socket())
-				break; /* loader went away */
+			{
+				log_msg("loader connection closed; exiting");
+				break;
+			}
 		}
 	}
 

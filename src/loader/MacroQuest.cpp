@@ -43,6 +43,7 @@
 #include "wil/registry.h"
 #include "wil/resource.h"
 
+#include <atomic>
 #include <filesystem>
 #include <thread>
 #include <tuple>
@@ -222,6 +223,12 @@ void UpdateShowConsole(bool showConsole, bool updateIni)
 	}
 }
 
+// The wine tray helper's log (see StartWineTrayBridge). Unlike the loader's
+// own logs this is a single file rewritten on every run, so it is exempt from
+// the rotation below - and deleting it while the helper holds it open would
+// send the helper's output to an unlinked inode.
+constexpr const char* TRAY_HELPER_LOG_FILENAME = "mq-tray-helper.log";
+
 static void PerformLoggingCleanup()
 {
 	fs::path loggingPath = internal_paths::Logs;
@@ -262,6 +269,11 @@ static void PerformLoggingCleanup()
 				continue;
 			}
 
+			if (mq::ci_equals(dirEntry.path().filename().string(), TRAY_HELPER_LOG_FILENAME))
+			{
+				continue;
+			}
+
 			// Check last modified time. If it is too old we purge.
 			auto file_time = fs::last_write_time(dirEntry.path(), ec);
 
@@ -278,10 +290,13 @@ static void PerformLoggingCleanup()
 		// Check if we need to remove log files based on total number remaining
 		if (countCutoff > 0 && dirItems.size() > countCutoff)
 		{
-			// Sort by modified time descending.
+			// Sort by modified time ascending: the overflow is taken from the
+			// front, so the oldest logs are the ones that go. (Sorting the
+			// other way round deleted the newest ones - including the log of
+			// the run doing the cleanup.)
 			std::sort(std::begin(dirItems), std::end(dirItems), [&](const DirEntry& a, const DirEntry& b)
 				{
-					return a.modifiedTime > b.modifiedTime;
+					return a.modifiedTime < b.modifiedTime;
 				});
 
 			std::copy_n(std::begin(dirItems), dirItems.size() - countCutoff, std::back_inserter(removeItems));
@@ -1052,6 +1067,21 @@ static SOCKET s_trayBridgeConn = INVALID_SOCKET;
 static std::thread s_trayBridgeThread;
 static bool s_trayBridgeActive = false;
 
+// Set once the helper process is spawned and cleared when it either connects
+// back (TRAY_BRIDGE_READY) or fails to (TRAY_BRIDGE_UNAVAILABLE). Spawning it
+// is not proof that it works - it can die before ever reaching us - so the
+// tray presence is only handed over on an actual connection. Until then we
+// hold off on the wine icon rather than leave a dead duplicate behind the
+// helper's.
+static bool s_trayBridgePending = false;
+
+// How long the helper gets to connect back before we give up on it.
+constexpr long TRAY_BRIDGE_CONNECT_TIMEOUT_SECONDS = 10;
+
+// Set before the sockets are torn down so the bridge thread can tell a real
+// helper failure from us shutting it down underneath it.
+static std::atomic<bool> s_trayBridgeStopping{ false };
+
 bool IsWineTrayBridgeActive()
 {
 	return s_trayBridgeActive;
@@ -1277,19 +1307,36 @@ static void RebuildTrayMenu()
 	SendTrayMenuModel();
 }
 
-// Add the wine/windows tray icon unless the bridge owns the tray presence.
+// Add the wine/windows tray icon unless the bridge owns the tray presence (or
+// is still waiting to find out whether it does).
 static void AddTrayIcon()
 {
-	if (!s_trayBridgeActive)
+	if (!s_trayBridgeActive && !s_trayBridgePending)
 		Shell_NotifyIcon(NIM_ADD, &NID);
 }
 
 static void TrayBridgeThread()
 {
-	const SOCKET conn = ::accept(s_trayBridgeListener, nullptr, nullptr);
+	// Bounded wait: a helper that dies before connecting would otherwise leave
+	// us blocked in accept() forever, and the loader would go on believing the
+	// bridge owns the tray - no icon, no fallback, and nothing in the log.
+	fd_set acceptSet;
+	FD_ZERO(&acceptSet);
+	FD_SET(s_trayBridgeListener, &acceptSet);
+	timeval acceptTimeout = { TRAY_BRIDGE_CONNECT_TIMEOUT_SECONDS, 0 };
+
+	const int ready = ::select(0, &acceptSet, nullptr, nullptr, &acceptTimeout);
+	const SOCKET conn = ready > 0 ? ::accept(s_trayBridgeListener, nullptr, nullptr) : INVALID_SOCKET;
 	if (conn == INVALID_SOCKET)
+	{
+		// Closing the listener out from under us is a shutdown, not a failure.
+		if (!s_trayBridgeStopping)
+			::PostMessageA(hMainWnd, WM_USER_TRAY_BRIDGE, TRAY_BRIDGE_UNAVAILABLE, ready == 0);
 		return;
+	}
 	s_trayBridgeConn = conn;
+
+	::PostMessageA(hMainWnd, WM_USER_TRAY_BRIDGE, TRAY_BRIDGE_READY, 0);
 
 	// Push the initial menu model (built on the main thread)
 	::PostMessageA(hMainWnd, WM_USER_TRAY_BRIDGE, TRAY_BRIDGE_REFRESH, 0);
@@ -1347,7 +1394,8 @@ static void TrayBridgeThread()
 		}
 	}
 
-	::PostMessageA(hMainWnd, WM_USER_TRAY_BRIDGE, TRAY_BRIDGE_LOST, 0);
+	if (!s_trayBridgeStopping)
+		::PostMessageA(hMainWnd, WM_USER_TRAY_BRIDGE, TRAY_BRIDGE_LOST, 0);
 }
 
 static bool StartWineTrayBridge()
@@ -1375,6 +1423,18 @@ static bool StartWineTrayBridge()
 		return false;
 	const std::string helperUnixPath = unixPathRaw;
 	::HeapFree(::GetProcessHeap(), 0, unixPathRaw);
+
+	// Give the helper a log of its own. Spawned through start.exe it would
+	// otherwise inherit our stderr, where its messages are interleaved with
+	// dxvk's output - the reason an exiting helper used to leave no trace.
+	std::string helperLogUnixPath;
+	const std::filesystem::path helperLogPath =
+		std::filesystem::path(internal_paths::Logs) / TRAY_HELPER_LOG_FILENAME;
+	if (char* logPathRaw = wineGetUnixFileName(helperLogPath.wstring().c_str()))
+	{
+		helperLogUnixPath = logPathRaw;
+		::HeapFree(::GetProcessHeap(), 0, logPathRaw);
+	}
 
 	WSADATA wsaData;
 	if (::WSAStartup(MAKEWORD(2, 2), &wsaData) != 0)
@@ -1404,7 +1464,8 @@ static bool StartWineTrayBridge()
 
 	// start.exe /unix executes a native binary with arguments
 	std::wstring commandLine = mq::utf8_to_wstring(
-		fmt::format("start.exe /unix \"{}\" {} \"MacroQuest\"", helperUnixPath, port));
+		fmt::format("start.exe /unix \"{}\" {} \"MacroQuest\" \"{}\"",
+			helperUnixPath, port, helperLogUnixPath));
 
 	STARTUPINFOW si = { sizeof(si) };
 	wil::unique_process_information pi;
@@ -1418,12 +1479,15 @@ static bool StartWineTrayBridge()
 	}
 
 	s_trayBridgeThread = std::thread(TrayBridgeThread);
-	SPDLOG_INFO("Wine tray bridge: helper {} launched (port {})", helperUnixPath, port);
+	SPDLOG_INFO("Wine tray bridge: helper {} launched (port {}, log {})",
+		helperUnixPath, port, helperLogUnixPath);
 	return true;
 }
 
 static void StopWineTrayBridge()
 {
+	s_trayBridgeStopping = true;
+
 	if (s_trayBridgeConn != INVALID_SOCKET)
 	{
 		::closesocket(s_trayBridgeConn);
@@ -1495,8 +1559,31 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT MSG, WPARAM wParam, LPARAM lParam)
 			PostQuitMessage(0);
 			break;
 
+		case TRAY_BRIDGE_READY:
+			SPDLOG_INFO("Wine tray bridge: helper connected; it owns the tray presence");
+			s_trayBridgePending = false;
+			s_trayBridgeActive = true;
+			// Drop the wine icon in case a taskbar-restart re-added it while
+			// we were still waiting on the helper.
+			Shell_NotifyIcon(NIM_DELETE, &NID);
+			break;
+
+		case TRAY_BRIDGE_UNAVAILABLE:
+			SPDLOG_WARN("Wine tray bridge: helper {} - see mq-tray-helper.log in the Logs folder. "
+				"Falling back to the wine tray icon",
+				lParam ? "did not connect within the timeout" : "could not be accepted");
+			s_trayBridgePending = false;
+			s_trayBridgeActive = false;
+			Shell_NotifyIcon(NIM_ADD, &NID);
+			// That icon cannot receive clicks on XEmbed->SNI proxied desktops,
+			// so leave the user a way in (same reasoning as the startup path
+			// taken when the bridge never starts at all).
+			LauncherImGui::OpenMainWindow();
+			break;
+
 		case TRAY_BRIDGE_LOST:
 			SPDLOG_WARN("Wine tray bridge lost; falling back to the wine tray icon");
+			s_trayBridgePending = false;
 			s_trayBridgeActive = false;
 			Shell_NotifyIcon(NIM_ADD, &NID);
 			break;
@@ -1826,9 +1913,12 @@ void InitializeWindows()
 	NID.uFlags = NIF_TIP | NIF_ICON | NIF_MESSAGE;
 
 	// Under wine, prefer a native StatusNotifierItem (the wine XEmbed icon
-	// shows but cannot receive clicks on XEmbed->SNI proxied desktops).
+	// shows but cannot receive clicks on XEmbed->SNI proxied desktops). The
+	// bridge only becomes active once the helper connects back; until then it
+	// is pending and the wine icon is held back (see TRAY_BRIDGE_READY /
+	// TRAY_BRIDGE_UNAVAILABLE).
 	if (IsRunningUnderWine())
-		s_trayBridgeActive = StartWineTrayBridge();
+		s_trayBridgePending = StartWineTrayBridge();
 	AddTrayIcon();
 
 	s_taskbarRestart = ::RegisterWindowMessageW(L"TaskbarCreated");
@@ -1842,8 +1932,9 @@ void InitializeWindows()
 	// Under wine without a working tray (no SNI bridge), the tray icon cannot
 	// receive clicks, leaving no way to reach the UI from the panel. Open the
 	// main window on startup instead; relaunching the exe also raises it (see
-	// the single-instance check).
-	if (IsRunningUnderWine() && !s_trayBridgeActive)
+	// the single-instance check). When the bridge is merely pending, this is
+	// deferred to TRAY_BRIDGE_UNAVAILABLE.
+	if (IsRunningUnderWine() && !s_trayBridgePending)
 	{
 		SPDLOG_INFO("Running under wine without tray bridge: opening main window (tray clicks may not be deliverable)");
 		LauncherImGui::OpenMainWindow();

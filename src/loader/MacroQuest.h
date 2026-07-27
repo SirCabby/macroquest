@@ -64,11 +64,13 @@ constexpr int WM_USER_TRAY_BRIDGE           = (WM_USER + 7);
 // WM_USER_TRAY_BRIDGE wParam values (lParam = packed x/y screen coords)
 constexpr int TRAY_BRIDGE_ACTIVATE          = 0;
 constexpr int TRAY_BRIDGE_CONTEXT_MENU      = 1;
-constexpr int TRAY_BRIDGE_LOST              = 2;
+constexpr int TRAY_BRIDGE_LOST              = 2;   // helper connected, then went away
 constexpr int TRAY_BRIDGE_MENU              = 3;
 constexpr int TRAY_BRIDGE_EXIT              = 4;
 constexpr int TRAY_BRIDGE_REFRESH           = 5;
 constexpr int TRAY_BRIDGE_MENUITEM          = 6;
+constexpr int TRAY_BRIDGE_READY             = 7;   // helper connected; it owns the tray
+constexpr int TRAY_BRIDGE_UNAVAILABLE       = 8;   // helper never connected back
 
 // True when the native wine tray helper owns the tray presence (see the
 // "Wine tray bridge" section in MacroQuest.cpp).
