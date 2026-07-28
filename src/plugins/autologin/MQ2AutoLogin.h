@@ -290,7 +290,26 @@ public:
 	static const char* hotkey() { return m_record ? m_record->hotkey.c_str() : ""; }
 	static const char* character_class() { return m_record ? m_record->characterClass.c_str() : ""; }
 
-	static std::optional<std::string> custom_ini() { return m_record ? m_record->customClientIni : std::nullopt; }
+	// Prefer the active login record; once in game StopLogin has cleared it, so fall back to
+	// the persistent current record to keep redirecting the client's in-game reads and the
+	// settings write-back at exit. Stored paths are relative to the EQ directory and must be
+	// resolved here -- GetPrivateProfile* resolves a bare relative path against the Windows
+	// directory instead.
+	static std::optional<std::string> custom_ini()
+	{
+		const std::shared_ptr<ProfileRecord>& record = m_record ? m_record : m_currentRecord;
+		if (!record || !record->customClientIni || record->customClientIni->empty())
+			return std::nullopt;
+
+		std::filesystem::path path(*record->customClientIni);
+		if (path.is_relative())
+		{
+			std::error_code ec;
+			path = std::filesystem::current_path(ec) / path;
+		}
+
+		return path.string();
+	}
 
 	static int character_level() { return m_record ? m_record->characterLevel : 0; }
 	static std::shared_ptr<ProfileRecord> get_record() { return m_record; }

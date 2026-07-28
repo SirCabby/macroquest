@@ -435,9 +435,6 @@ static std::shared_ptr<ProfileRecord> GetInitialLoginProfile(CEditWnd* pEditWnd)
 		if (record.serverName.empty() && record.characterName.empty())
 			login::db::ReadFirstProfile(record);
 
-		if (record.customClientIni)
-			record.customClientIni = (std::filesystem::current_path() / *record.customClientIni).string();
-
 		return std::make_shared<ProfileRecord>(record);
 	}
 

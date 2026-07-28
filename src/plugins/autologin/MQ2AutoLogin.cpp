@@ -917,18 +917,16 @@ PLUGIN_API void InitializePlugin()
 		EzDetour(s_joinServer, &LoginServer_Hook::JoinServer_Detour, &LoginServer_Hook::JoinServer_Trampoline);
 	}
 
-	if (const auto custom_client_ini = login::db::ReadSetting("custom_client_ini");
-		custom_client_ini && GetBoolFromString(*custom_client_ini, false))
-	{
-		uintptr_t pfnGetPrivateProfileIntA = (uintptr_t)&::GetPrivateProfileIntA;
-		EzDetour(pfnGetPrivateProfileIntA, GetPrivateProfileIntA_Detour, GetPrivateProfileIntA_Tramp);
+	// The detours are pass-through no-ops unless the active profile has a custom client ini,
+	// so install them unconditionally rather than gating on a global setting.
+	uintptr_t pfnGetPrivateProfileIntA = (uintptr_t)&::GetPrivateProfileIntA;
+	EzDetour(pfnGetPrivateProfileIntA, GetPrivateProfileIntA_Detour, GetPrivateProfileIntA_Tramp);
 
-		uintptr_t pfnGetPrivateProfileStringA = (uintptr_t)&::GetPrivateProfileStringA;
-		EzDetour(pfnGetPrivateProfileStringA, GetPrivateProfileStringA_Detour, GetPrivateProfileStringA_Trampoline);
+	uintptr_t pfnGetPrivateProfileStringA = (uintptr_t)&::GetPrivateProfileStringA;
+	EzDetour(pfnGetPrivateProfileStringA, GetPrivateProfileStringA_Detour, GetPrivateProfileStringA_Trampoline);
 
-		uintptr_t pfnWritePrivateProfileStringA = (uintptr_t)&::WritePrivateProfileStringA;
-		EzDetour(pfnWritePrivateProfileStringA, WritePrivateProfileStringA_Detour, WritePrivateProfileStringA_Trampoline);
-	}
+	uintptr_t pfnWritePrivateProfileStringA = (uintptr_t)&::WritePrivateProfileStringA;
+	EzDetour(pfnWritePrivateProfileStringA, WritePrivateProfileStringA_Detour, WritePrivateProfileStringA_Trampoline);
 
 	s_reenableTime = MQGetTickCount64() + STEP_DELAY;
 
