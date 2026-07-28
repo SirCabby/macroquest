@@ -399,24 +399,8 @@ static std::shared_ptr<ProfileRecord> GetInitialLoginProfile(CEditWnd* pEditWnd)
 {
 	if (Login::is_in_state<Connect>() || Login::is_in_state<ConnectConfirm>())
 	{
-		// initialize input to empty, we will try to populate it from the command line first
-		std::string input;
-
-		// we expect this to be populated because we feed eqgame.exe with a `/login:` parameter
-		// the reason to do it this way is because the autopopulation of the login field is limited to 31 characters by eqgame
-		std::string cmdline(::GetCommandLineA());
-
-		// find the login argument if it exists, otherwise input will remain empty
-		const std::vector<std::string_view> args_tokens = tokenize_args(cmdline);
-		for (auto token: args_tokens)
-		{
-			const size_t loc = token.find("/login:");
-			if (loc != std::string_view::npos && token.length() > 7)
-			{
-				input = strip_quotes(token.substr(loc + 7), '"');
-				break;
-			}
-		}
+		// try to populate the input from the command line first
+		std::string input = GetCommandLineLoginString();
 
 		// fallback method, the only case where we would hit this is if we manually entered the login string after eqgame started.
 		CXStr inputText = GetEditWndText(pEditWnd);

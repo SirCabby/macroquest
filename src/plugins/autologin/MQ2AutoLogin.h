@@ -41,6 +41,7 @@ void NotifyCharacterLoad(const char* Profile, const char* Account, const char* S
 void NotifyCharacterLoad(const std::shared_ptr<ProfileRecord>& ptr);
 void NotifyCharacterUnload();
 void NotifyCharacterUpdate(int Class, int Level, const char* Server, const char* Character);
+std::string GetCommandLineLoginString();
 void SendWndNotification(CXWnd* pWnd, CXWnd* sender, uint32_t msg, void* data = nullptr);
 CXStr GetWindowText(CXWnd* pWnd);
 CXStr GetEditWndText(CEditWnd* pWnd);
@@ -213,6 +214,9 @@ protected:
 	static inline std::shared_ptr<ProfileRecord> m_record;
 	// This is what we're logged in as.
 	static inline std::shared_ptr<ProfileRecord> m_currentRecord;
+	// Custom client ini resolved from the command line profile at plugin load, before any
+	// login profile has been selected.
+	static inline std::optional<std::string> m_startupCustomIni;
 	static inline std::vector<ProfileGroup> m_profiles;
 	static inline CXWnd* m_currentWindow = nullptr; // the current in focus window
 	static inline bool m_paused = false;
@@ -290,18 +294,28 @@ public:
 	static const char* hotkey() { return m_record ? m_record->hotkey.c_str() : ""; }
 	static const char* character_class() { return m_record ? m_record->characterClass.c_str() : ""; }
 
-	// Prefer the active login record; once in game StopLogin has cleared it, so fall back to
-	// the persistent current record to keep redirecting the client's in-game reads and the
-	// settings write-back at exit. Stored paths are relative to the EQ directory and must be
-	// resolved here -- GetPrivateProfile* resolves a bare relative path against the Windows
-	// directory instead.
+	// The client reads and writes eqclient.ini while starting up, long before the login state
+	// machine selects a profile, so the ini resolved from the command line at plugin load takes
+	// priority and holds for the process lifetime (the client's in-memory settings came from
+	// that file). Records drive the redirect only when the command line had no profile (e.g. a
+	// manually entered login string); prefer the active login record there, falling back to the
+	// persistent current record once StopLogin has cleared it in game. Stored paths are relative
+	// to the EQ directory and must be resolved here -- GetPrivateProfile* resolves a bare
+	// relative path against the Windows directory instead.
 	static std::optional<std::string> custom_ini()
 	{
-		const std::shared_ptr<ProfileRecord>& record = m_record ? m_record : m_currentRecord;
-		if (!record || !record->customClientIni || record->customClientIni->empty())
+		std::optional<std::string> ini = m_startupCustomIni;
+		if (!ini || ini->empty())
+		{
+			const std::shared_ptr<ProfileRecord>& record = m_record ? m_record : m_currentRecord;
+			if (record)
+				ini = record->customClientIni;
+		}
+
+		if (!ini || ini->empty())
 			return std::nullopt;
 
-		std::filesystem::path path(*record->customClientIni);
+		std::filesystem::path path(*ini);
 		if (path.is_relative())
 		{
 			std::error_code ec;
@@ -310,6 +324,8 @@ public:
 
 		return path.string();
 	}
+
+	static void set_startup_custom_ini(const std::optional<std::string>& ini) { m_startupCustomIni = ini; }
 
 	static int character_level() { return m_record ? m_record->characterLevel : 0; }
 	static std::shared_ptr<ProfileRecord> get_record() { return m_record; }

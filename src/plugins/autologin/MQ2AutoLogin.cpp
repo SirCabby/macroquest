@@ -566,6 +566,21 @@ void Cmd_Loginchar(SPAWNINFO* pChar, char* szLine)
 	}
 }
 
+std::string GetCommandLineLoginString()
+{
+	// we expect this to be populated because we feed eqgame.exe with a `/login:` parameter
+	// the reason to do it this way is because the autopopulation of the login field is limited to 31 characters by eqgame
+	const std::string cmdline(::GetCommandLineA());
+	for (std::string_view token : tokenize_args(cmdline))
+	{
+		const size_t loc = token.find("/login:");
+		if (loc != std::string_view::npos && token.length() > loc + 7)
+			return std::string(strip_quotes(token.substr(loc + 7), '"'));
+	}
+
+	return {};
+}
+
 DETOUR_TRAMPOLINE_DEF(DWORD WINAPI, GetPrivateProfileStringA_Trampoline, (LPCSTR, LPCSTR, LPCSTR, LPSTR, DWORD, LPCSTR))
 
 DWORD WINAPI GetPrivateProfileStringA_Detour(LPCSTR lpAppName, LPCSTR lpKeyName, LPCSTR lpDefault, LPSTR lpReturnedString, DWORD nSize, LPCSTR lpFileName)
@@ -592,6 +607,13 @@ BOOL WINAPI WritePrivateProfileStringA_Detour(LPCSTR lpAppName, LPCSTR lpKeyName
 
 		if (CustomIni && !CustomIni->empty() && ci_find_substr(lpFileName, "eqclient.ini") != -1)
 		{
+			static bool logged = false;
+			if (!logged)
+			{
+				logged = true;
+				AutoLoginDebug(fmt::format("Client settings are being written to {}", *CustomIni));
+			}
+
 			return WritePrivateProfileStringA_Trampoline(lpAppName, lpKeyName, lpString, CustomIni->c_str());
 		}
 	}
@@ -915,6 +937,27 @@ PLUGIN_API void InitializePlugin()
 		// we have eqmain offset, save the offset because it gets cleared before we can unset the detour
 		s_joinServer = EQMain__LoginServerAPI__JoinServer;
 		EzDetour(s_joinServer, &LoginServer_Hook::JoinServer_Detour, &LoginServer_Hook::JoinServer_Trampoline);
+	}
+
+	// The client reads and writes eqclient.ini while starting up, long before the login state
+	// machine selects a profile, so resolve the custom client ini from the command line now.
+	if (const std::string loginString = GetCommandLineLoginString(); !loginString.empty())
+	{
+		// The launch string names either a profile group and character (profile_server:character)
+		// or just the character (server:character), depending on how the session was started.
+		// ReadFullProfile keys off server/character and treats the group as optional, so the
+		// profile's custom ini resolves for both forms.
+		ProfileRecord record = ProfileRecord::FromString(loginString);
+		if (!record.serverName.empty() && !record.characterName.empty())
+		{
+			login::db::ReadFullProfile(record);
+
+			if (record.customClientIni && !record.customClientIni->empty())
+			{
+				Login::set_startup_custom_ini(record.customClientIni);
+				AutoLoginDebug(fmt::format("Custom client ini resolved at startup: {}", *record.customClientIni));
+			}
+		}
 	}
 
 	// The detours are pass-through no-ops unless the active profile has a custom client ini,

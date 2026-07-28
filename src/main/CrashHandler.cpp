@@ -327,6 +327,26 @@ void SetCrashId()
 
 int MQ2CrashHandler(EXCEPTION_POINTERS* ex, const char* description)
 {
+#if defined(_M_IX86)
+	// Wine's wow64 creates debugger break-in and remote threads with a 64-bit ntdll start
+	// address truncated to 32 bits, so the thread faults fetching its very first instruction
+	// with an otherwise fresh register state. The thread never ran any real code -- exit it
+	// quietly instead of raising the modal crash dialog, which can be invisible on wine
+	// desktops and leaves the session looking wedged.
+	if (ex && ex->ExceptionRecord && ex->ContextRecord
+		&& ex->ExceptionRecord->ExceptionCode == EXCEPTION_ACCESS_VIOLATION
+		&& (DWORD)(DWORD_PTR)ex->ExceptionRecord->ExceptionAddress == ex->ContextRecord->Eip
+		&& ex->ContextRecord->Edx == ex->ContextRecord->Eip
+		&& ex->ContextRecord->Eax == 0 && ex->ContextRecord->Ebx == 0
+		&& ex->ContextRecord->Ecx == 0 && ex->ContextRecord->Esi == 0
+		&& ex->ContextRecord->Edi == 0)
+	{
+		SPDLOG_WARN("Exiting broken thread: start address {} faulted before executing any code (wine wow64 break-in)",
+			(void*)(DWORD_PTR)ex->ContextRecord->Eip);
+		::ExitThread(1);
+	}
+#endif
+
 	SymSetOptions(SYMOPT_UNDNAME | SYMOPT_DEFERRED_LOADS | SYMOPT_LOAD_LINES);
 	HANDLE hProcess = GetCurrentProcess();
 	DWORD processID = GetCurrentProcessId();
@@ -413,6 +433,17 @@ int MQ2CrashHandler(EXCEPTION_POINTERS* ex, const char* description)
 		"\n"
 		"Copy the contents of this dialog to your clipboard by pressing Ctrl+C\n",
 		szTemp);
+
+	// The dialog can be invisible on some wine desktops -- always record the crash details
+	// to a log file before showing it.
+	{
+		const std::filesystem::path crashLogPath = std::filesystem::path(mq::internal_paths::Logs) / "CrashDialog.log";
+		if (FILE* crashLog = _fsopen(crashLogPath.string().c_str(), "a", _SH_DENYWR))
+		{
+			fprintf(crashLog, "%s\n", szTemp);
+			fclose(crashLog);
+		}
+	}
 
 	const int mbRet = ::MessageBoxA(nullptr, szMessage, "EverQuest Crash Detected", MB_RETRYCANCEL | MB_DEFBUTTON2 | MB_ICONERROR | MB_SYSTEMMODAL);
 
