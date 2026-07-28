@@ -2086,6 +2086,34 @@ std::optional<std::string> login::db::GetEQPath(std::string_view group, std::str
 	return {};
 }
 
+std::optional<std::string> login::db::GetCustomClientIni(std::string_view group, std::string_view server, std::string_view name)
+{
+	if (server.empty() || name.empty())
+		return {};
+
+	// left join the group so this resolves for a character launched without a profile group
+	return WithDb::Query<std::optional<std::string>>(SQLITE_OPEN_READONLY,
+		R"(
+			SELECT custom_client_ini
+			FROM profiles
+			JOIN (SELECT id AS character_id FROM characters WHERE server = LOWER(?) AND character = LOWER(?)) USING (character_id)
+			LEFT JOIN (SELECT id AS group_id FROM profile_groups WHERE name = LOWER(?)) USING (group_id))",
+		[server, name, group](sqlite3_stmt* stmt, sqlite3*) -> std::optional<std::string>
+		{
+			BindText(stmt, 1, server);
+			BindText(stmt, 2, name);
+			BindText(stmt, 3, group);
+
+			if (sqlite3_step(stmt) == SQLITE_ROW && sqlite3_column_type(stmt, 0) != SQLITE_NULL)
+			{
+				if (std::string ini = ReadText(stmt, 0); !ini.empty())
+					return ini;
+			}
+
+			return {};
+		});
+}
+
 std::vector<ProfileGroup> login::db::GetProfileGroups()
 {
 	std::vector<ProfileGroup> profile_groups;

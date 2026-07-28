@@ -939,24 +939,36 @@ PLUGIN_API void InitializePlugin()
 		EzDetour(s_joinServer, &LoginServer_Hook::JoinServer_Detour, &LoginServer_Hook::JoinServer_Trampoline);
 	}
 
-	// The client reads and writes eqclient.ini while starting up, long before the login state
-	// machine selects a profile, so resolve the custom client ini from the command line now.
-	if (const std::string loginString = GetCommandLineLoginString(); !loginString.empty())
+	// The client parses eqclient.ini with its own reader during startup, long before the login
+	// state machine selects a profile, so the redirect target has to be settled here at load
+	// time. The loader stages the profile's file into place and passes its path down in the
+	// environment; the command line is the fallback for a client it did not launch.
+	if (char envIni[MAX_PATH] = { 0 };
+		::GetEnvironmentVariableA("MQ_CUSTOM_CLIENT_INI", envIni, MAX_PATH) > 0 && envIni[0] != '\0')
+	{
+		Login::set_startup_custom_ini(std::string(envIni));
+		AutoLoginDebug(fmt::format("Custom client ini from loader: {}", envIni));
+	}
+	else if (const std::string loginString = GetCommandLineLoginString(); !loginString.empty())
 	{
 		// The launch string names either a profile group and character (profile_server:character)
 		// or just the character (server:character), depending on how the session was started.
 		// ReadFullProfile keys off server/character and treats the group as optional, so the
 		// profile's custom ini resolves for both forms.
 		ProfileRecord record = ProfileRecord::FromString(loginString);
-		if (!record.serverName.empty() && !record.characterName.empty())
+		if (record.serverName.empty() || record.characterName.empty())
 		{
-			login::db::ReadFullProfile(record);
-
-			if (record.customClientIni && !record.customClientIni->empty())
-			{
-				Login::set_startup_custom_ini(record.customClientIni);
-				AutoLoginDebug(fmt::format("Custom client ini resolved at startup: {}", *record.customClientIni));
-			}
+			AutoLoginDebug(fmt::format("No character in login string '{}', client ini will not be redirected", loginString));
+		}
+		else if (login::db::ReadFullProfile(record);
+			record.customClientIni && !record.customClientIni->empty())
+		{
+			Login::set_startup_custom_ini(record.customClientIni);
+			AutoLoginDebug(fmt::format("Custom client ini resolved at startup: {}", *record.customClientIni));
+		}
+		else
+		{
+			AutoLoginDebug(fmt::format("No custom client ini configured for {} on {}", record.characterName, record.serverName));
 		}
 	}
 

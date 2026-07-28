@@ -29,6 +29,7 @@
 #include <shellapi.h>
 #include <TlHelp32.h>
 
+
 namespace fs = std::filesystem;
 
 static std::unordered_map<std::string, LoginInstance> s_loadedInstances;
@@ -362,6 +363,48 @@ DWORD LaunchProcess(const std::string& process, const std::string& workingDir)
 	return 0;
 }
 
+// The client hardcodes `.\eqclient.ini`, resolves it against its working directory and parses
+// it with its own reader within the first second of startup -- so every client in one game
+// folder loads the same settings, and nothing injected later can change that. The dinput8
+// proxy from the akk-stack client pack redirects the client's opens of that name, because the
+// loader runs its DllMain before the client's entry point. All this side has to do is name the
+// file: the proxy reads MQ_CUSTOM_CLIENT_INI out of the environment the child inherits.
+static std::optional<std::string> ResolveCustomClientIni(const std::string& eqPath, ProfileRecord& profile)
+{
+	if (!profile.customClientIni || profile.customClientIni->empty())
+	{
+		// not every path that reaches here fills the record in from the database
+		profile.customClientIni = login::db::GetCustomClientIni(
+			profile.profileName, profile.serverName, profile.characterName);
+	}
+
+	if (!profile.customClientIni || profile.customClientIni->empty())
+		return {};
+
+	std::error_code ec;
+	fs::path custom(*profile.customClientIni);
+	if (custom.is_relative())
+		custom = fs::path(eqPath) / custom;
+
+	// First launch on a newly configured profile: start it from the settings the client is
+	// using now rather than the client's built-in defaults. One-time, only when it is missing.
+	if (!fs::exists(custom, ec))
+	{
+		const fs::path live = fs::path(eqPath) / "eqclient.ini";
+		if (fs::exists(live, ec))
+		{
+			if (!fs::copy_file(live, custom, ec))
+				SPDLOG_ERROR("Could not create client ini {} from {}: {}",
+					custom.string(), live.string(), ec.message());
+			else
+				SPDLOG_INFO("Created client ini {} for {}", custom.string(), profile.characterName);
+		}
+	}
+
+	SPDLOG_INFO("Client ini for {}: {}", profile.characterName, custom.string());
+	return custom.string();
+}
+
 const LoginInstance* StartInstance(ProfileRecord& profile)
 {
 	std::string instanceKey = LoginInstance::Key(profile);
@@ -424,7 +467,18 @@ const LoginInstance* StartInstance(ProfileRecord& profile)
 			{
 				std::string parameters = fmt::format(R"("{}" patchme "/login:{}")", eqgame.string(), arg);
 
-				if (DWORD dwProcessID = LaunchProcess(parameters, eqPath))
+				// Launches are serialized through ProcessPendingLogins, so the child inherits
+				// this for the one process we are about to create.
+				const std::optional<std::string> customIni = ResolveCustomClientIni(eqPath, profile);
+				if (customIni)
+					::SetEnvironmentVariableA("MQ_CUSTOM_CLIENT_INI", customIni->c_str());
+
+				const DWORD dwProcessID = LaunchProcess(parameters, eqPath);
+
+				if (customIni)
+					::SetEnvironmentVariableA("MQ_CUSTOM_CLIENT_INI", nullptr);
+
+				if (dwProcessID)
 				{
 					auto [it, _] = s_loadedInstances.emplace(
 						LoginInstance::Key(profile),

@@ -21,7 +21,9 @@
 #include <tinyfsm.hpp>
 #include <memory>
 
-static bool AUTOLOGIN_DBG = false;
+// inline, not static: a per-translation-unit copy means ReadSettings() only ever turns debug on
+// for MQ2AutoLogin.cpp, silently dropping every AutoLoginDebug call made from StateMachine.cpp
+inline bool AUTOLOGIN_DBG = false;
 
 struct CurrentLogin
 {
