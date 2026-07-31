@@ -44,6 +44,7 @@ void NotifyCharacterLoad(const std::shared_ptr<ProfileRecord>& ptr);
 void NotifyCharacterUnload();
 void NotifyCharacterUpdate(int Class, int Level, const char* Server, const char* Character);
 std::string GetCommandLineLoginString();
+void ApplyStartupHostOverride();
 void SendWndNotification(CXWnd* pWnd, CXWnd* sender, uint32_t msg, void* data = nullptr);
 CXStr GetWindowText(CXWnd* pWnd);
 CXStr GetEditWndText(CEditWnd* pWnd);
@@ -219,6 +220,9 @@ protected:
 	// Custom client ini resolved from the command line profile at plugin load, before any
 	// login profile has been selected.
 	static inline std::optional<std::string> m_startupCustomIni;
+	// Login host the loader picked for this client. Only set for a session launched without a
+	// profile, where there is no record for the state machine to resolve the override from.
+	static inline std::optional<std::string> m_startupHostOverride;
 	static inline std::vector<ProfileGroup> m_profiles;
 	static inline CXWnd* m_currentWindow = nullptr; // the current in focus window
 	static inline bool m_paused = false;
@@ -328,6 +332,9 @@ public:
 	}
 
 	static void set_startup_custom_ini(const std::optional<std::string>& ini) { m_startupCustomIni = ini; }
+
+	static const std::optional<std::string>& startup_host_override() { return m_startupHostOverride; }
+	static void set_startup_host_override(const std::optional<std::string>& host) { m_startupHostOverride = host; }
 
 	static int character_level() { return m_record ? m_record->characterLevel : 0; }
 	static std::shared_ptr<ProfileRecord> get_record() { return m_record; }

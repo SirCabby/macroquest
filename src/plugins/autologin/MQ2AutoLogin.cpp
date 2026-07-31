@@ -972,6 +972,16 @@ PLUGIN_API void InitializePlugin()
 		}
 	}
 
+	// A session launched without a profile still has a login server picked in the launcher, but
+	// nothing on the command line to resolve it from, so the loader names the host it chose in
+	// the environment the client inherits.
+	if (char envHost[256] = { 0 };
+		::GetEnvironmentVariableA("MQ_LOGIN_HOST_OVERRIDE", envHost, sizeof(envHost)) > 0 && envHost[0] != '\0')
+	{
+		Login::set_startup_host_override(std::string(envHost));
+		AutoLoginDebug(fmt::format("Login host override from loader: {}", envHost));
+	}
+
 	// The detours are pass-through no-ops unless the active profile has a custom client ini,
 	// so install them unconditionally rather than gating on a global setting.
 	uintptr_t pfnGetPrivateProfileIntA = (uintptr_t)&::GetPrivateProfileIntA;
@@ -1248,6 +1258,10 @@ PLUGIN_API void OnPulse()
 	else if (GetGameState() == GAMESTATE_PRECHARSELECT && g_pLoginClient && (MQGetTickCount64() > s_reenableTime || Login::m_skipNextDelay))
 	{
 		Login::m_skipNextDelay = false;
+
+		// Do this before clicking through anything that could start a connection.
+		ApplyStartupHostOverride();
+
 		// pair of WindowNames / ButtonNames
 		static const std::vector<std::pair<const char*, const char*>> PromptWindows = {
 			{ "OrderWindow",          "Order_DeclineButton" },

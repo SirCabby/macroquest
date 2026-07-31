@@ -1194,7 +1194,31 @@ static void RebuildTrayMenu()
 			LauncherImGui::SelectMainPanel("AutoLogin/Profiles");
 			LauncherImGui::OpenMainWindow();
 		});
-	TrayMenuAdd('i', 0, "Launch Without Login", [] { LaunchCleanSession(); });
+	{
+		// A session launched without a profile still has to pick a login server, and the only
+		// thing that varies per server is its host override -- servers without one would all
+		// be the same entry, so only the configured ones get listed.
+		const std::vector<std::tuple<std::string, std::string, std::string>> hostOverrides =
+			login::db::ListServerHostOverrides().vector();
+
+		if (hostOverrides.empty())
+		{
+			TrayMenuAdd('i', 0, "Launch Without Login", [] { LaunchCleanSession(); });
+		}
+		else
+		{
+			const int cleanSession = TrayMenuAdd('i', 0, "Launch Without Login");
+			TrayMenuAdd('i', cleanSession, "Default Host (eqhost.txt)", [] { LaunchCleanSession(); });
+			TrayMenuAdd('s', cleanSession, {});
+
+			for (const auto& [shortName, longName, host] : hostOverrides)
+			{
+				TrayMenuAdd('i', cleanSession,
+					fmt::format("{} ({})", longName.empty() ? shortName : longName, host),
+					[shortName = shortName] { LaunchCleanSession(shortName); });
+			}
+		}
+	}
 
 	{
 		const int profiles = TrayMenuAdd('i', 0, "Profiles");

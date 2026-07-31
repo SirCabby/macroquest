@@ -1875,8 +1875,37 @@ void ShowAutoLoginMenu()
 	if (ImGui::MenuItem("Open Config"))
 		LauncherImGui::SelectMainPanel("AutoLogin/Profiles");
 
-	if (ImGui::MenuItem("Launch Without Login"))
-		LaunchCleanSession();
+	// Mirrors the tray menu: a session launched without a profile still has to pick a login
+	// server, and the only thing that varies per server is its host override.
+	static auto host_overrides = login::db::CacheResults(login::db::ListServerHostOverrides);
+	if (host_overrides.Read().empty())
+	{
+		if (ImGui::MenuItem("Launch Without Login"))
+			LaunchCleanSession();
+	}
+	else
+	{
+		ImGui::SetNextWindowSizeConstraints(ImVec2(120, 0), ImVec2(FLT_MAX, FLT_MAX));
+		if (ImGui::BeginMenu("Launch Without Login"))
+		{
+			if (ImGui::MenuItem("Default Host (eqhost.txt)"))
+				LaunchCleanSession();
+
+			ImGui::Separator();
+
+			for (const auto& [short_name, long_name, host] : host_overrides.Read())
+			{
+				buf.clear();
+				fmt::format_to(buf_ins, "{} ({})", long_name.empty() ? short_name : long_name, host);
+				buf.push_back(0);
+
+				if (ImGui::MenuItem(buf.data()))
+					LaunchCleanSession(short_name);
+			}
+
+			ImGui::EndMenu();
+		}
+	}
 
 	ImGui::SetNextWindowSizeConstraints(ImVec2(120, 0), ImVec2(FLT_MAX, FLT_MAX));
 	if (ImGui::BeginMenu("Profiles"))

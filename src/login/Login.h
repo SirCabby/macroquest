@@ -18,6 +18,7 @@
 
 #include <filesystem>
 #include <optional>
+#include <tuple>
 
 #ifdef _DEBUG
 #pragma comment(lib, "libprotobufd")
@@ -347,6 +348,8 @@ void DeleteServer(std::string_view short_name, std::string_view long_name);
 void WriteServerHostOverride(std::string_view short_name, std::string_view long_name, std::string_view host_override);
 std::optional<std::string> ReadServerHostOverride(std::string_view short_name, std::string_view long_name);
 std::optional<std::string> ReadServerHostOverride(std::string_view server_name);
+// short name, long name, host override -- only the servers that have one configured
+Results<std::tuple<std::string, std::string, std::string>> ListServerHostOverrides();
 
 void CreateOrUpdateServerType(std::string_view server_type, std::string_view eq_path);
 Results<std::string> ListServerTypes();

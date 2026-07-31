@@ -21,7 +21,9 @@
 void LoadCharacter(const ProfileRecord& profile, bool force);
 void LoadProfileGroup(std::string_view group, bool force);
 
-void LaunchCleanSession();
+// Launch eqgame.exe with no profile. If serverName names a server with a login host
+// override, the session is pointed at that host instead of what eqhost.txt says.
+void LaunchCleanSession(std::string_view serverName = {});
 void ProcessPendingLogins();
 void Import();
 std::string GetEQRoot();

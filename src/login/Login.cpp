@@ -1559,6 +1559,25 @@ std::optional<std::string> login::db::ReadServerHostOverride(std::string_view sh
 		});
 }
 
+login::db::Results<std::tuple<std::string, std::string, std::string>> login::db::ListServerHostOverrides()
+{
+	return {
+		WithDb::Get(SQLITE_OPEN_READONLY),
+		R"(
+			SELECT short_name, long_name, custom_host FROM servers
+			WHERE custom_host IS NOT NULL AND custom_host <> ''
+			ORDER BY long_name, short_name)",
+		[](sqlite3_stmt*, sqlite3*) {},
+		[](sqlite3_stmt* stmt, sqlite3*)
+		{
+			return std::make_tuple(
+				ReadText(stmt, 0),
+				ReadText(stmt, 1),
+				ReadText(stmt, 2));
+		}
+	};
+}
+
 std::optional<std::string> login::db::ReadServerHostOverride(std::string_view server_name)
 {
 	return WithDb::Query<std::optional<std::string>>(SQLITE_OPEN_READONLY,

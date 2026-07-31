@@ -131,7 +131,7 @@ void LoadProfileGroup(std::string_view group, bool force)
 	}
 }
 
-void LaunchCleanSession()
+void LaunchCleanSession(std::string_view serverName)
 {
 	const auto eqgame = fs::path{ GetEQRoot() } / "eqgame.exe";
 	if (std::error_code ec; !fs::exists(eqgame, ec))
@@ -143,7 +143,30 @@ void LaunchCleanSession()
 		// create command line arguments
 		std::string parameters = fmt::format(R"("{}" patchme)", eqgame.string());
 
-		if (!LaunchProcess(parameters, GetEQRoot()))
+		// A clean session has no profile, so the plugin has no record to read the server's
+		// host override from. Hand the resolved address down in the environment the child
+		// inherits -- the same channel the custom client ini uses. Launches happen on the
+		// main thread, so the variable only ever covers the one process created below.
+		std::optional<std::string> hostOverride;
+		if (!serverName.empty())
+		{
+			hostOverride = login::db::ReadServerHostOverride(serverName);
+			if (!hostOverride || hostOverride->empty())
+				SPDLOG_WARN("No login host override configured for {}, using eqhost.txt", serverName);
+			else
+				SPDLOG_INFO("Launching clean session against {} ({})", serverName, *hostOverride);
+		}
+
+		const bool haveHost = hostOverride && !hostOverride->empty();
+		if (haveHost)
+			::SetEnvironmentVariableA("MQ_LOGIN_HOST_OVERRIDE", hostOverride->c_str());
+
+		const DWORD dwProcessID = LaunchProcess(parameters, GetEQRoot());
+
+		if (haveHost)
+			::SetEnvironmentVariableA("MQ_LOGIN_HOST_OVERRIDE", nullptr);
+
+		if (!dwProcessID)
 		{
 			SPDLOG_ERROR("{}",
 				fmt::windows_error(GetLastError(), "Failed to launch eqgame.exe").what());

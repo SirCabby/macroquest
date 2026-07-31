@@ -189,14 +189,17 @@ public:
 	}
 };
 
-// If the target server has a login host override configured, rewrite the client's
-// parsed eqhost.txt host list in memory so the connection goes there instead —
-// eqhost.txt itself is never touched. The original values are captured once so a
-// later login in the same client (e.g. a different server) can restore them.
-static void ApplyServerHostOverride(const ProfileRecord* record)
+// If the target server has a login host override configured -- or the launcher picked one
+// for a session started without a profile -- rewrite the client's parsed eqhost.txt host
+// list in memory so the connection goes there instead; eqhost.txt itself is never touched.
+// The original values are captured once so a later login in the same client (e.g. a
+// different server) can restore them.
+// Returns true if the client's host list was actually rewritten -- the caller needs to know
+// whether the client had parsed eqhost.txt yet.
+static bool ApplyServerHostOverride(const ProfileRecord* record)
 {
 	if (!g_pLoginClient)
-		return;
+		return false;
 
 	static std::vector<std::pair<CXStr, int>> s_originalHosts;
 	if (s_originalHosts.empty())
@@ -208,9 +211,16 @@ static void ApplyServerHostOverride(const ProfileRecord* record)
 		}
 	}
 
-	std::optional<std::string> override_host;
-	if (record && !record->serverName.empty())
+	// A host picked at launch is an explicit choice for this client and outranks anything a
+	// record implies -- without a profile the record is inferred, not chosen.
+	std::optional<std::string> override_host = Login::startup_host_override();
+	std::string_view server = "launcher";
+
+	if ((!override_host || override_host->empty()) && record && !record->serverName.empty())
+	{
 		override_host = login::db::ReadServerHostOverride(record->serverName);
+		server = record->serverName;
+	}
 
 	if (override_host && !override_host->empty())
 	{
@@ -222,6 +232,7 @@ static void ApplyServerHostOverride(const ProfileRecord* record)
 			host = host.substr(0, colon);
 		}
 
+		int applied = 0;
 		for (LoginClient::Host* pHost : g_pLoginClient->Hosts)
 		{
 			if (!pHost)
@@ -231,11 +242,17 @@ static void ApplyServerHostOverride(const ProfileRecord* record)
 				pHost->Name = host.c_str();
 			if (port > 0)
 				pHost->Port = port;
+
+			++applied;
 		}
 
-		AutoLoginDebug(fmt::format("Connect: login host override for {} -> {}:{}", record->serverName, host, port));
+		if (applied > 0)
+			AutoLoginDebug(fmt::format("Login host override from {} -> {}:{}", server, host, port));
+
+		return applied > 0;
 	}
-	else if (!s_originalHosts.empty())
+
+	if (!s_originalHosts.empty())
 	{
 		size_t i = 0;
 		for (LoginClient::Host* pHost : g_pLoginClient->Hosts)
@@ -252,6 +269,23 @@ static void ApplyServerHostOverride(const ProfileRecord* record)
 			++i;
 		}
 	}
+
+	return false;
+}
+
+// The state machine only enters Connect when it has credentials to type, so a session started
+// without a profile can sit at the login screen with the client still pointed at eqhost.txt.
+// Apply the host the launcher picked as soon as the client has parsed its host list, and only
+// once -- after that the player owns the connection.
+void ApplyStartupHostOverride()
+{
+	static bool applied = false;
+
+	const std::optional<std::string>& host = Login::startup_host_override();
+	if (applied || !host || host->empty())
+		return;
+
+	applied = ApplyServerHostOverride(nullptr);
 }
 
 class Connect : public Login
