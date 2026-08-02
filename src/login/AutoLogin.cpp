@@ -323,22 +323,37 @@ DWORD LaunchProcess(const std::string& process, const std::string& workingDir)
 		hParent.reset(::OpenProcess(PROCESS_CREATE_PROCESS, FALSE, dwParentProcessID));
 	}
 
-	if (!hParent)
-	{
-		SPDLOG_ERROR("Failed to find parent process for new eqgame process");
-		return 0;
-	}
+	// Reparenting onto the shell keeps clients out of the loader's process tree, but it is a
+	// nicety rather than a requirement. There is no candidate parent in a wine prefix whose
+	// explorer.exe has gone away, and refusing to launch there turns every launch into a menu
+	// item that silently does nothing -- launching as our own child is the better failure.
+	const bool reparent = static_cast<bool>(hParent);
+	if (!reparent)
+		SPDLOG_WARN("No parent process found for the new eqgame process, launching it as a child of the loader");
 
 	STARTUPINFOEXA si = { sizeof(STARTUPINFOEXA) };
 	si.StartupInfo.wShowWindow = SW_SHOWNORMAL;
 	si.StartupInfo.dwFlags = STARTF_USESHOWWINDOW;
-	SIZE_T sizeToAlloc;
-	InitializeProcThreadAttributeList(NULL, 1, 0, &sizeToAlloc);
-	std::unique_ptr<char[]> pProcThreadAttrListPtr = std::make_unique<char[]>(sizeToAlloc);
-	PPROC_THREAD_ATTRIBUTE_LIST pProcThreadAttrList = (PPROC_THREAD_ATTRIBUTE_LIST)pProcThreadAttrListPtr.get();
-	InitializeProcThreadAttributeList(pProcThreadAttrList, 1, 0, &sizeToAlloc);
-	UpdateProcThreadAttribute(pProcThreadAttrList, 0, PROC_THREAD_ATTRIBUTE_PARENT_PROCESS, hParent.addressof(), sizeof(hParent.get()), nullptr, nullptr);
-	si.lpAttributeList = pProcThreadAttrList;
+
+	std::unique_ptr<char[]> pProcThreadAttrListPtr;
+	DWORD creationFlags = 0;
+
+	if (reparent)
+	{
+		SIZE_T sizeToAlloc;
+		InitializeProcThreadAttributeList(NULL, 1, 0, &sizeToAlloc);
+		pProcThreadAttrListPtr = std::make_unique<char[]>(sizeToAlloc);
+		PPROC_THREAD_ATTRIBUTE_LIST pProcThreadAttrList = (PPROC_THREAD_ATTRIBUTE_LIST)pProcThreadAttrListPtr.get();
+		InitializeProcThreadAttributeList(pProcThreadAttrList, 1, 0, &sizeToAlloc);
+		UpdateProcThreadAttribute(pProcThreadAttrList, 0, PROC_THREAD_ATTRIBUTE_PARENT_PROCESS, hParent.addressof(), sizeof(hParent.get()), nullptr, nullptr);
+		si.lpAttributeList = pProcThreadAttrList;
+		creationFlags = EXTENDED_STARTUPINFO_PRESENT;
+	}
+	else
+	{
+		// Without the attribute list this has to describe a plain STARTUPINFOA
+		si.StartupInfo.cb = sizeof(STARTUPINFOA);
+	}
 
 	SetLastError(0);
 
@@ -349,7 +364,7 @@ DWORD LaunchProcess(const std::string& process, const std::string& workingDir)
 		nullptr,
 		nullptr,
 		FALSE,
-		EXTENDED_STARTUPINFO_PRESENT,
+		creationFlags,
 		nullptr,
 		workingDir.c_str(),
 		(LPSTARTUPINFOA)&si,
