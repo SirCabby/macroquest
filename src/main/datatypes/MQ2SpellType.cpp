@@ -107,6 +107,8 @@ enum class SpellMembers
 	Dispellable,
 	Link,
 	MinCasterLevel,
+	CanCastInCombat,
+	CanCastOutOfCombat,
 };
 
 enum class SpellMethods
@@ -164,6 +166,8 @@ MQ2SpellType::MQ2SpellType() : MQ2Type("spell")
 	ScopedTypeMember(SpellMembers, TimeOfDay);
 	ScopedTypeMember(SpellMembers, DurationWindow);
 	ScopedTypeMember(SpellMembers, CanMGB);
+	ScopedTypeMember(SpellMembers, CanCastInCombat);
+	ScopedTypeMember(SpellMembers, CanCastOutOfCombat);
 	ScopedTypeMember(SpellMembers, Deletable);
 	ScopedTypeMember(SpellMembers, BookIcon);
 	ScopedTypeMember(SpellMembers, ActorTagId);
@@ -1015,6 +1019,19 @@ bool MQ2SpellType::GetMember(MQVarPtr VarPtr, const char* Member, char* Index, M
 
 	case SpellMembers::CanMGB:
 		Dest.Set(pSpell->CanMGB);
+		Dest.Type = pBoolType;
+		return true;
+
+	// The pair the server checks against the caster's aggro count: a spell with one of them
+	// clear is refused in (or out of) combat, which is otherwise only discoverable by being
+	// told so in chat after the cast has already been spent.
+	case SpellMembers::CanCastInCombat:
+		Dest.Set(pSpell->CanCastInCombat);
+		Dest.Type = pBoolType;
+		return true;
+
+	case SpellMembers::CanCastOutOfCombat:
+		Dest.Set(pSpell->CanCastOutOfCombat);
 		Dest.Type = pBoolType;
 		return true;
 
